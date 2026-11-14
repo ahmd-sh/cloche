@@ -1,13 +1,13 @@
 # cloche protocol
 
-JSON over HTTP/1.1, between the phone and `cloche serve` on the Mac's tailnet
+JSON over HTTP/1.1, between the phone and `cloche serve` on the computer's tailnet
 address, port 41778. Types are in `internal/wire` and
-`android/.../link/Wire.kt`; `testdata/golden.json` is a delivery the Mac
+`android/.../link/Wire.kt`; `testdata/golden.json` is a delivery the computer
 signed, which both ends' tests check.
 
-The phone always calls; the Mac never does. Every request is checked against
+The phone makes every request. Every request is checked against
 Tailscale (`tailscale whois` on its source address). Pairing needs a node of
-the Mac's own Tailscale user; everything else needs the paired phone's node
+the computer's own Tailscale user; everything else needs the paired phone's node
 and its secret, as `Authorization: Bearer <secret>`.
 
 ## Pairing
@@ -17,8 +17,11 @@ characters of Crockford base32, `XXXX-XXXX-XXXX`; five wrong tries close it)
 and shows a link:
 
 ```
-cloche://pair?a=100.101.102.103:41778&c=K7Q2-M9XD-3FPA&f=<sha256 of the key, base64url>&h=my-laptop
+https://ahmd-sh.github.io/cloche/pair/#a=100.101.102.103%3A41778&c=K7Q2-M9XD-3FPA&f=<sha256 of the key, base64url>&h=my-laptop
 ```
+
+The page (`site/pair`) reads the fragment, which stays in the browser, and
+opens Cloche with the same parameters as `cloche://pair?a=…&c=…&f=…&h=…`.
 
 ```
 POST /v1/pair  {"code": "K7Q2-M9XD-3FPA", "device": "Pixel 10 Pro"}
@@ -28,7 +31,7 @@ POST /v1/pair  {"code": "K7Q2-M9XD-3FPA", "device": "Pixel 10 Pro"}
 
 The phone checks the key against `f` when the link carried it, and keeps the
 key (pinned: every manifest must be signed by it) and the secret (sealed
-with a key in Android's keystore). The Mac keeps the phone's node ID and the
+with a key in Android's keystore). The computer keeps the phone's node ID and the
 secret's SHA-256. `head` is where the phone starts: after everything but the
 last hour's deliveries.
 
@@ -41,7 +44,7 @@ GET /v1/inbox?after=11&wait=270
 
 Held open up to `wait` seconds (at most 300) until there's a delivery after
 `after`, then answered with all of them, oldest first. The phone moves its
-cursor to `head`, and polls again at once. A cursor past `head` (the Mac's
+cursor to `head`, and polls again at once. A cursor past `head` (the computer's
 state was reset) is answered at once, and the phone starts again from
 `head`.
 
@@ -59,7 +62,7 @@ before it parses them, and drops a delivery that doesn't verify.
 }
 ```
 
-`apk` is what the Mac's build tools read, when they're installed: the phone
+`apk` is what the computer's build tools read, when they're installed: the phone
 shows it until it has the file, then reads its own. `source` is read from
 git by `cloche push`. `note` is the pusher's own words.
 
@@ -82,20 +85,20 @@ POST /v1/result/{id}  {"status": "installed", "detail": "", "package": "…", "v
 Statuses: `ready` (fetched, checked, notified), `blocked` (refused, with
 why), `installing`, `installed`, `failed`, `declined` (cancelled at
 Android's prompt), `superseded` (a newer build of the app arrived first).
-The phone sends each stage until the Mac has heard it. `cloche push -wait`
+The phone sends each stage until the computer has heard it. `cloche push -wait`
 waits on these.
 
 ## Errors
 
 `{"error": "…"}` with 400, 403 (pairing refused), 404 (no such delivery),
-401 (not the paired phone, or a secret the Mac doesn't know: the phone
+401 (not the paired phone, or a secret the computer doesn't know: the phone
 stops and asks to pair again), or 503 (Tailscale couldn't say who called).
 
 ## iPhones
 
 An iPhone has no app: `cloche serve` serves it a web app over HTTPS on
-port 41780 of the Mac's tailnet address, as `https://<name>.<tailnet>.ts.net:41780`,
-with the certificate `tailscale cert` gives the Mac. Requests are checked
+port 41780 of the computer's tailnet address, as `https://<name>.<tailnet>.ts.net:41780`,
+with the certificate `tailscale cert` gives the computer. Requests are checked
 with `tailscale whois` like the phone's; the node is the credential, with no
 secret, since iOS fetches builds itself without the web app's cookies or
 headers. POSTs from the web app must carry its own `Origin`.
@@ -115,12 +118,12 @@ GET  /m/{id}/icon.png
 ```
 
 Notifications are Web Push (RFC 8030), encrypted for the subscription
-(RFC 8291, aes128gcm) and signed with the Mac's VAPID key (RFC 8292,
+(RFC 8291, aes128gcm) and signed with the computer's VAPID key (RFC 8292,
 `webpush.pem`), through Apple's push service. Their payload is
 `{"title", "body", "url", "tag"}`.
 
 An iPhone's deliveries share the sequence with the phone's, but the phone's
-inbox skips them. Their `result` is set by the Mac from what iOS fetches:
+inbox skips them. Their `result` is set by the computer from what iOS fetches:
 `asked` (the manifest), `installing` (the download began), `downloaded`
 (all of it, which is final: iOS doesn't report installs).
 

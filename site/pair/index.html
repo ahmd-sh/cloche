@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Pair Cloche</title>
+<meta name="theme-color" content="#0F3D6E">
+<link rel="icon" href="../icon.png">
+<link rel="stylesheet" href="../style.css">
+<script src="pair.js" defer></script>
+</head>
+<body>
+<header>
+  <a class="mark" href="../"><img src="../icon.png" alt="">CLOCHE</a>
+</header>
+<main>
+  <h1 id="title">Pair this phone</h1>
+  <p class="red" id="problem" hidden></p>
+  <ol class="steps" id="steps">
+    <li>
+      <h3>Tailscale</h3>
+      <p class="dim">Install it and sign in with the account your computer uses.</p>
+      <a class="button ghost" href="https://play.google.com/store/apps/details?id=com.tailscale.ipn">Get Tailscale</a>
+    </li>
+    <li>
+      <h3>Cloche</h3>
+      <p class="dim">Install the app. The first time, Android asks you to let your browser install apps.</p>
+      <a class="button ghost" href="https://github.com/ahmd-sh/cloche/releases/latest/download/cloche.apk">Download Cloche</a>
+    </li>
+    <li>
+      <h3>Pair</h3>
+      <p class="dim">With Tailscale on, open Cloche with this computer's code.</p>
+      <a class="button" id="open" aria-disabled="true">Open in Cloche</a>
+      <p class="faint" id="code"></p>
+    </li>
+  </ol>
+  <p class="faint">If the code has run out, run <code>cloche pair</code> on your computer again and scan the new one.</p>
+</main>
+</body>
+</html>

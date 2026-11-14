@@ -24,15 +24,35 @@ cloche status                     # the phone, and what became of recent builds
 Cloche needs [Tailscale](https://tailscale.com/download) on the computer and
 the phone, signed in to the same account.
 
+macOS and Linux:
+
 ```sh
-go install github.com/ahmd-sh/cloche/cmd/cloche@latest
-cloche setup    # checks Tailscale, keeps cloche serve running, adds the agent skill
+curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
+```
+
+Windows, in PowerShell:
+
+```powershell
+irm https://ahmd-sh.github.io/cloche/install.ps1 | iex
+```
+
+The script downloads cloche from the latest release, checks it against the
+release's checksums, puts it in `~/.local/bin` (on Windows,
+`%LOCALAPPDATA%\Programs\cloche`), and runs `cloche setup`. With Go:
+`go install github.com/ahmd-sh/cloche/cmd/cloche@latest && cloche setup`.
+
+`cloche setup` runs `cloche serve` with launchd on macOS, a systemd user
+service on Linux, or a Task Scheduler task on Windows, and adds the agent
+skill. `cloche uninstall` removes both.
+
+Then pair the phone:
+
+```sh
 cloche pair     # scan the code with the phone's camera, or type it into Cloche
 ```
 
-`cloche setup` runs `cloche serve` with launchd on macOS, a systemd user
-service on Linux, or a Task Scheduler task on Windows, and shows where to get
-the Android app. `cloche uninstall` removes the service and the skill.
+The code opens a page that helps install Tailscale and Cloche on the phone,
+then pairs them.
 
 To build the app yourself: `cd android && ./gradlew assembleRelease`. Cloche
 updates itself like any other build:

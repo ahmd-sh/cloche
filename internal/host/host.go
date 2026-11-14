@@ -396,7 +396,7 @@ func (h *Host) startPairing(ttl time.Duration, ios bool, friend string) (PairSta
 	d := sha256.Sum256(h.spki)
 	p := PairStart{
 		Host: h.name, Addr: h.addr, Code: code, Fingerprint: h.Fingerprint(), Expires: h.pairing.expires,
-		URL: "cloche://pair?" + url.Values{"h": {h.name}, "a": {h.addr}, "c": {code}, "f": {base64.RawURLEncoding.EncodeToString(d[:])}}.Encode(),
+		URL: PairPage + "#" + url.Values{"h": {h.name}, "a": {h.addr}, "c": {code}, "f": {base64.RawURLEncoding.EncodeToString(d[:])}}.Encode(),
 		IOS: ios, Friend: friend,
 	}
 	if ios {
@@ -404,6 +404,8 @@ func (h *Host) startPairing(ttl time.Duration, ios bool, friend string) (PairSta
 	}
 	return p, nil
 }
+
+const PairPage = "https://ahmd-sh.github.io/cloche/pair/"
 
 type PairStart struct {
 	Host        string    `json:"host"`

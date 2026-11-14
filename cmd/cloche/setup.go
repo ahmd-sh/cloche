@@ -18,8 +18,6 @@ import (
 	"github.com/ahmd-sh/cloche/skill"
 )
 
-const appURL = "https://github.com/ahmd-sh/cloche/releases/latest/download/cloche.apk"
-
 const adminDNS = "https://login.tailscale.com/admin/dns"
 
 func setup(args []string) error {
@@ -119,26 +117,17 @@ func setup(args []string) error {
 		return nil
 	}
 
-	signIn := "sign in"
+	signIn := ""
 	if !self.Tagged {
-		signIn = "sign in as " + self.Login
+		signIn = ", signed in as " + self.Login
 	}
 	fmt.Printf(`
-Next, on your Android phone:
+Next, pair your phone. It needs Tailscale%s.
 
-  1. Install Tailscale from the Play Store and %s.
-  2. Install Cloche. Scan this with the phone's camera, or open
-     %s
-
-`, signIn, appURL)
-	if err := printQR(os.Stdout, appURL); err != nil {
-		return err
-	}
-	fmt.Print(`
-  3. Run cloche pair here, and scan its code with the phone's camera.
-
-For an iPhone, run cloche pair -ios.
-`)
+  cloche pair        an Android phone: scan the code with its camera, and
+                     the page it opens helps install Cloche
+  cloche pair -ios   an iPhone
+`, signIn)
 	return nil
 }
 

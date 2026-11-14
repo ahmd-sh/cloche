@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Cloche</title>
+<meta name="description" content="Cloche delivers app builds to your phone over Tailscale.">
+<meta name="theme-color" content="#0F3D6E">
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+</head>
+<body>
+<header>
+  <a class="mark" href="./"><img src="icon.png" alt="">CLOCHE</a>
+  <nav><a href="https://github.com/ahmd-sh/cloche">GitHub</a></nav>
+</header>
+<main>
+  <h1>App builds on your phone, from your computer, over Tailscale.</h1>
+  <p class="dim">An agent on your computer pushes a build. Your phone gets a notification, checks the build, and a tap installs it. iPhones get builds through a web app.</p>
+
+  <h2>Install</h2>
+  <p class="dim">You need <a href="https://tailscale.com/download">Tailscale</a> on the computer and the phone, signed in to the same account.</p>
+  <p class="label">macOS and Linux</p>
+  <div class="cmd"><code>curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh</code><button type="button">Copy</button></div>
+  <p class="label">Windows, in PowerShell</p>
+  <div class="cmd"><code>irm https://ahmd-sh.github.io/cloche/install.ps1 | iex</code><button type="button">Copy</button></div>
+  <p class="dim">The script downloads cloche from the latest <a href="https://github.com/ahmd-sh/cloche/releases/latest">release</a>, checks it against the release's checksums, puts it in your user folder, and runs <code>cloche setup</code>. Setup keeps <code>cloche serve</code> running in the background and adds a skill that tells Claude Code how to use cloche.</p>
+  <p class="label">With Go</p>
+  <div class="cmd"><code>go install github.com/ahmd-sh/cloche/cmd/cloche@latest &amp;&amp; cloche setup</code><button type="button">Copy</button></div>
+
+  <h2>Pair</h2>
+  <div class="cmd"><code>cloche pair</code><button type="button">Copy</button></div>
+  <p class="dim">Scan the code with your Android phone's camera. The page it opens helps you install Tailscale and Cloche, then pairs them.</p>
+  <div class="cmd"><code>cloche pair -ios</code><button type="button">Copy</button></div>
+  <p class="dim">For an iPhone. Builds for it need to be signed for that iPhone.</p>
+
+  <h2>Use</h2>
+  <div class="cmd"><code>cloche push app-debug.apk -m "Rename inline"</code><button type="button">Copy</button></div>
+  <div class="sheet"><pre class="flow">cloche push ──▶ cloche serve ◀── tailnet ── Cloche on the phone
+  (agent)        (computer)                notifies; a tap installs</pre></div>
+  <p class="dim">Nothing installs without a tap. The phone checks every build against the computer's key, and refuses one signed by a different key from the installed app. The <a href="https://github.com/ahmd-sh/cloche#security">README</a> covers the rest.</p>
+</main>
+<footer>
+  <a href="https://github.com/ahmd-sh/cloche">Source</a> · <a href="https://github.com/ahmd-sh/cloche/releases">Releases</a> · MIT License
+</footer>
+</body>
+</html>

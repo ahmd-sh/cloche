@@ -49,12 +49,13 @@ func pair(args []string) error {
 		return err
 	}
 	fmt.Printf(`
-Scan it with the phone's camera, open the link on the phone, or type
-the code into Cloche:
+Scan it with the phone's camera, or open the link on the phone. Its page
+helps install Tailscale and Cloche, then pairs. Or type the code into
+Cloche:
 
-  mac   %s  (%s)
-  code  %s
-  link  %s
+  computer  %s  (%s)
+  code      %s
+  link      %s
 
 The computer's key is %s; Cloche shows it as it pairs.
 The code works once, until %s.

@@ -5,7 +5,7 @@ description: Deliver an Android build (APK) to the user's phone, or an iOS build
 
 # Delivering a build with cloche
 
-`cloche` runs on this Mac and relays APKs to the user's paired phone over
+`cloche` runs on this computer and relays APKs to the user's paired phone over
 their tailnet. The phone downloads each build, checks it, and notifies; the
 user taps to install. Nothing installs without that tap.
 

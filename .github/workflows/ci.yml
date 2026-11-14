@@ -64,3 +64,61 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - run: ./gradlew --no-daemon testDebugUnitTest assembleRelease
+
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: install.sh, from a release served here
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p "$RUNNER_TEMP/rel" "$RUNNER_TEMP/home"
+          name=cloche-$(go env GOOS)-$(go env GOARCH).tar.gz
+          go build -ldflags "-X main.version=0.0.0-ci" -o "$RUNNER_TEMP/rel/cloche" ./cmd/cloche
+          tar -C "$RUNNER_TEMP/rel" -czf "$RUNNER_TEMP/rel/$name" cloche
+          (cd "$RUNNER_TEMP/rel" && shasum -a 256 "$name" > checksums.txt)
+          python3 -m http.server -d "$RUNNER_TEMP/rel" -b 127.0.0.1 8765 &
+          sleep 2
+          sed -e 's#^base=.*#base=http://127.0.0.1:8765#' -e "s#--proto '=https' --tlsv1.2 ##" site/install.sh > "$RUNNER_TEMP/install.sh"
+          HOME=$RUNNER_TEMP/home SHELL=/bin/bash sh "$RUNNER_TEMP/install.sh" | tee out.txt
+          "$RUNNER_TEMP/home/.local/bin/cloche" version | grep -qx 'cloche 0.0.0-ci'
+          grep -q 'Added .* to your PATH' out.txt
+          grep -qs '.local/bin' "$RUNNER_TEMP/home/.bashrc" "$RUNNER_TEMP/home/.bash_profile"
+          echo 0000000000000000000000000000000000000000000000000000000000000000 "  $name" > "$RUNNER_TEMP/rel/checksums.txt"
+          if HOME=$RUNNER_TEMP/home sh "$RUNNER_TEMP/install.sh"; then
+            echo "::error::install.sh accepted a file that doesn't match its checksum"
+            exit 1
+          fi
+      - name: install.ps1, from a release served here
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rel = Join-Path $env:RUNNER_TEMP 'rel'
+          New-Item -ItemType Directory $rel | Out-Null
+          $name = "cloche-windows-$(go env GOARCH).zip"
+          go build -ldflags "-X main.version=0.0.0-ci" -o "$rel\cloche.exe" ./cmd/cloche
+          Compress-Archive "$rel\cloche.exe" "$rel\$name"
+          $hash = (Get-FileHash -Algorithm SHA256 "$rel\$name").Hash.ToLower()
+          Set-Content -Encoding ascii "$rel\checksums.txt" "$hash  $name"
+          Start-Process python -ArgumentList '-m', 'http.server', '-d', $rel, '-b', '127.0.0.1', '8765' -WindowStyle Hidden
+          Start-Sleep 2
+          $script = (Get-Content -Raw site/install.ps1).Replace('https://github.com/ahmd-sh/cloche/releases/latest/download', 'http://127.0.0.1:8765')
+          Set-Content "$rel\install.ps1" $script
+          $env:CLOCHE_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin'
+          powershell -NoProfile -Command 'irm http://127.0.0.1:8765/install.ps1 | iex'
+          $v = & "$env:CLOCHE_INSTALL_DIR\cloche.exe" version
+          if ($v -ne 'cloche 0.0.0-ci') { throw "installed: $v" }
+          if (-not ([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' -contains $env:CLOCHE_INSTALL_DIR)) { throw 'not on the user PATH' }
+          Set-Content -Encoding ascii "$rel\checksums.txt" "$('0' * 64)  $name"
+          powershell -NoProfile -Command 'irm http://127.0.0.1:8765/install.ps1 | iex'
+          if ($LASTEXITCODE -eq 0) { throw "install.ps1 accepted a file that doesn't match its checksum" }
+          $global:LASTEXITCODE = 0
