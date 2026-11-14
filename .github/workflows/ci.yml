@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,12 +30,7 @@ jobs:
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l . | tee /dev/stderr)"
       - run: go vet ./...
-      - name: test
-        if: runner.os != 'Windows'
-        run: go test -race ./...
-      - name: test (no race detector, which needs cgo on Windows)
-        if: runner.os == 'Windows'
-        run: go test ./...
+      - run: go test -race ./...
 
   govulncheck:
     runs-on: ubuntu-latest
@@ -69,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,7 +74,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: install.sh, from a release served here
-        if: runner.os != 'Windows'
         run: |
           mkdir -p "$RUNNER_TEMP/rel" "$RUNNER_TEMP/home"
           name=cloche-$(go env GOOS)-$(go env GOARCH).tar.gz
@@ -98,27 +92,3 @@ jobs:
             echo "::error::install.sh accepted a file that doesn't match its checksum"
             exit 1
           fi
-      - name: install.ps1, from a release served here
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $rel = Join-Path $env:RUNNER_TEMP 'rel'
-          New-Item -ItemType Directory $rel | Out-Null
-          $name = "cloche-windows-$(go env GOARCH).zip"
-          go build -ldflags "-X main.version=0.0.0-ci" -o "$rel\cloche.exe" ./cmd/cloche
-          Compress-Archive "$rel\cloche.exe" "$rel\$name"
-          $hash = (Get-FileHash -Algorithm SHA256 "$rel\$name").Hash.ToLower()
-          Set-Content -Encoding ascii "$rel\checksums.txt" "$hash  $name"
-          Start-Process python -ArgumentList '-m', 'http.server', '-d', $rel, '-b', '127.0.0.1', '8765' -WindowStyle Hidden
-          Start-Sleep 2
-          $script = (Get-Content -Raw site/install.ps1).Replace('https://github.com/ahmd-sh/cloche/releases/latest/download', 'http://127.0.0.1:8765')
-          Set-Content "$rel\install.ps1" $script
-          $env:CLOCHE_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin'
-          powershell -NoProfile -Command 'irm http://127.0.0.1:8765/install.ps1 | iex'
-          $v = & "$env:CLOCHE_INSTALL_DIR\cloche.exe" version
-          if ($v -ne 'cloche 0.0.0-ci') { throw "installed: $v" }
-          if (-not ([Environment]::GetEnvironmentVariable('Path', 'User') -split ';' -contains $env:CLOCHE_INSTALL_DIR)) { throw 'not on the user PATH' }
-          Set-Content -Encoding ascii "$rel\checksums.txt" "$('0' * 64)  $name"
-          powershell -NoProfile -Command 'irm http://127.0.0.1:8765/install.ps1 | iex'
-          if ($LASTEXITCODE -eq 0) { throw "install.ps1 accepted a file that doesn't match its checksum" }
-          $global:LASTEXITCODE = 0

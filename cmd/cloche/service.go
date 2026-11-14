@@ -2,16 +2,13 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
-	"unicode/utf16"
 )
 
 const serviceLabel = "sh.ahmd.cloche"
@@ -82,71 +79,9 @@ func systemdUnit(bin string, env map[string]string) string {
 	return b.String()
 }
 
-func taskXML(bin, user string) string {
-	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo>
-    <Description>cloche: builds to your phone over Tailscale</Description>
-  </RegistrationInfo>
-  <Triggers>
-    <LogonTrigger>
-      <Enabled>true</Enabled>
-      <UserId>%[2]s</UserId>
-    </LogonTrigger>
-  </Triggers>
-  <Principals>
-    <Principal id="Author">
-      <UserId>%[2]s</UserId>
-      <LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel>
-    </Principal>
-  </Principals>
-  <Settings>
-    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-    <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>true</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-    <IdleSettings>
-      <StopOnIdleEnd>false</StopOnIdleEnd>
-      <RestartOnIdle>false</RestartOnIdle>
-    </IdleSettings>
-    <AllowStartOnDemand>true</AllowStartOnDemand>
-    <Enabled>true</Enabled>
-    <Hidden>true</Hidden>
-    <RunOnlyIfIdle>false</RunOnlyIfIdle>
-    <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-    <Priority>7</Priority>
-    <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>999</Count>
-    </RestartOnFailure>
-  </Settings>
-  <Actions Context="Author">
-    <Exec>
-      <Command>"%[1]s"</Command>
-      <Arguments>serve</Arguments>
-    </Exec>
-  </Actions>
-</Task>
-`, xmlText(bin), xmlText(user))
-}
-
-func utf16File(s string) []byte {
-	u := utf16.Encode([]rune(s))
-	b := make([]byte, 2+2*len(u))
-	b[0], b[1] = 0xff, 0xfe
-	for i, c := range u {
-		binary.LittleEndian.PutUint16(b[2+2*i:], c)
-	}
-	return b
-}
-
 func tilde(p string) string {
 	h, err := os.UserHomeDir()
-	if err != nil || runtime.GOOS == "windows" {
+	if err != nil {
 		return p
 	}
 	if rel, err := filepath.Rel(h, p); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {

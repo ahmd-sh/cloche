@@ -30,20 +30,12 @@ macOS and Linux:
 curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
 ```
 
-Windows, in PowerShell:
-
-```powershell
-irm https://ahmd-sh.github.io/cloche/install.ps1 | iex
-```
-
 The script downloads cloche from the latest release, checks it against the
-release's checksums, puts it in `~/.local/bin` (on Windows,
-`%LOCALAPPDATA%\Programs\cloche`), and runs `cloche setup`. With Go:
-`go install github.com/ahmd-sh/cloche/cmd/cloche@latest && cloche setup`.
+release's checksums, puts it in `~/.local/bin`, and runs `cloche setup`. With
+Go: `go install github.com/ahmd-sh/cloche/cmd/cloche@latest && cloche setup`.
 
-`cloche setup` runs `cloche serve` with launchd on macOS, a systemd user
-service on Linux, or a Task Scheduler task on Windows, and adds the agent
-skill. `cloche uninstall` removes both.
+`cloche setup` runs `cloche serve` with launchd on macOS or a systemd user
+service on Linux, and adds the agent skill. `cloche uninstall` removes both.
 
 Then pair the phone:
 

@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -54,21 +53,12 @@ func Find() (*CLI, error) {
 }
 
 func installed() []string {
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return []string{
 			"/usr/local/bin/tailscale",
 			"/opt/homebrew/bin/tailscale",
 			"/Applications/Tailscale.app/Contents/MacOS/Tailscale",
 		}
-	case "windows":
-		var dirs []string
-		for _, env := range []string{"ProgramFiles", "ProgramW6432"} {
-			if d := os.Getenv(env); d != "" {
-				dirs = append(dirs, filepath.Join(d, "Tailscale", "tailscale.exe"))
-			}
-		}
-		return append(dirs, `C:\Program Files\Tailscale\tailscale.exe`)
 	}
 	return []string{"/usr/bin/tailscale", "/usr/local/bin/tailscale", "/usr/sbin/tailscale", "/snap/bin/tailscale"}
 }

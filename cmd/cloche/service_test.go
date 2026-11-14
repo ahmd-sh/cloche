@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/xml"
 	"io"
 	"os"
@@ -10,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unicode/utf16"
 )
 
 func wellFormed(t *testing.T, doc string) {
@@ -61,32 +58,5 @@ func TestSystemdUnit(t *testing.T) {
 		if !strings.Contains(u, want) {
 			t.Errorf("no %q in\n%s", want, u)
 		}
-	}
-}
-
-func TestTaskXML(t *testing.T) {
-	x := taskXML(`C:\Users\a&b\cloche.exe`, `PC\a&b`)
-	wellFormed(t, x)
-	for _, want := range []string{
-		`<Command>"C:\Users\a&amp;b\cloche.exe"</Command>`,
-		`<UserId>PC\a&amp;b</UserId>`,
-		"<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
-		"<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
-		"<LogonType>InteractiveToken</LogonType>",
-	} {
-		if !strings.Contains(x, want) {
-			t.Errorf("no %q in\n%s", want, x)
-		}
-	}
-	b := utf16File("é<")
-	if !bytes.Equal(b[:2], []byte{0xff, 0xfe}) {
-		t.Fatal("no BOM")
-	}
-	u := make([]uint16, (len(b)-2)/2)
-	for i := range u {
-		u[i] = binary.LittleEndian.Uint16(b[2+2*i:])
-	}
-	if string(utf16.Decode(u)) != "é<" {
-		t.Error("UTF-16 doesn't read back")
 	}
 }

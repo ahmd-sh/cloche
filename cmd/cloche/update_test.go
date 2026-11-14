@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -13,7 +12,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -36,36 +34,18 @@ func tarGz(t *testing.T, files map[string]string) []byte {
 	return b.Bytes()
 }
 
-func zipOf(t *testing.T, files map[string]string) []byte {
-	t.Helper()
-	var b bytes.Buffer
-	zw := zip.NewWriter(&b)
-	for name, body := range files {
-		w, _ := zw.Create(name)
-		w.Write([]byte(body))
-	}
-	zw.Close()
-	return b.Bytes()
-}
-
 func TestExtract(t *testing.T) {
-	files := map[string]string{"cloche": "unix", "cloche.exe": "windows", "LICENSE": "MIT", "README.md": "x"}
+	files := map[string]string{"cloche": "unix", "LICENSE": "MIT", "README.md": "x"}
 	if b, err := extract("cloche-linux-amd64.tar.gz", tarGz(t, files)); err != nil || string(b) != "unix" {
 		t.Errorf("tar.gz: %q %v", b, err)
-	}
-	if b, err := extract("cloche-windows-amd64.zip", zipOf(t, files)); err != nil || string(b) != "windows" {
-		t.Errorf("zip: %q %v", b, err)
 	}
 	if _, err := extract("cloche-linux-amd64.tar.gz", tarGz(t, map[string]string{"bin/cloche": "x", "../cloche": "y"})); err == nil {
 		t.Error("took a cloche from another folder")
 	}
-	if _, err := extract("cloche-windows-amd64.zip", zipOf(t, map[string]string{"x/cloche.exe": "x"})); err == nil {
-		t.Error("took a cloche.exe from another folder")
-	}
 	if _, err := extract("cloche-linux-amd64.tar.gz", []byte("not gzip")); err == nil {
 		t.Error("took a broken archive")
 	}
-	if got := archiveName("windows", "arm64"); got != "cloche-windows-arm64.zip" {
+	if got := archiveName("linux", "amd64"); got != "cloche-linux-amd64.tar.gz" {
 		t.Error(got)
 	}
 	if got := archiveName("darwin", "arm64"); got != "cloche-darwin-arm64.tar.gz" {
@@ -74,9 +54,6 @@ func TestExtract(t *testing.T) {
 }
 
 func TestReplace(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script as the new binary")
-	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "cloche")
 	os.WriteFile(bin, []byte("old"), 0o755)

@@ -9,7 +9,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 )
@@ -237,9 +236,6 @@ func TestIcon(t *testing.T) {
 }
 
 func TestPackKeepsModes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows files have no mode bits to keep")
-	}
 	z, err := zip.OpenReader(pack(t, makeApp(t, AdHoc, false)))
 	if err != nil {
 		t.Fatal(err)

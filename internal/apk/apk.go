@@ -108,26 +108,13 @@ func sdkDir() string {
 		}
 	}
 	home, _ := os.UserHomeDir()
-	switch runtime.GOOS {
-	case "darwin":
+	if runtime.GOOS == "darwin" {
 		return filepath.Join(home, "Library", "Android", "sdk")
-	case "windows":
-		if d := os.Getenv("LOCALAPPDATA"); d != "" {
-			return filepath.Join(d, "Android", "Sdk")
-		}
-		return filepath.Join(home, "AppData", "Local", "Android", "Sdk")
 	}
 	return filepath.Join(home, "Android", "Sdk")
 }
 
 func tool(dir, name string) string {
-	if runtime.GOOS == "windows" {
-		if name == "apksigner" {
-			name += ".bat"
-		} else {
-			name += ".exe"
-		}
-	}
 	return filepath.Join(dir, name)
 }
 

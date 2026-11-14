@@ -1,7 +1,6 @@
 #!/bin/sh
 set -eu
 
-repo=https://github.com/ahmd-sh/cloche
 base=https://github.com/ahmd-sh/cloche/releases/latest/download
 
 say() {
@@ -72,7 +71,7 @@ main() {
 	case $(uname -s) in
 	Darwin) os=darwin ;;
 	Linux) os=linux ;;
-	*) fail "this is for macOS and Linux. For Windows, see $repo" ;;
+	*) fail "cloche runs on macOS and Linux" ;;
 	esac
 	case $(uname -m) in
 	x86_64 | amd64) arch=amd64 ;;

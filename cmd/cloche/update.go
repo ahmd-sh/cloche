@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/tar"
-	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -30,9 +29,6 @@ const (
 )
 
 func archiveName(goos, goarch string) string {
-	if goos == "windows" {
-		return "cloche-windows-" + goarch + ".zip"
-	}
 	return "cloche-" + goos + "-" + goarch + ".tar.gz"
 }
 
@@ -95,23 +91,6 @@ func update(args []string) error {
 }
 
 func extract(name string, b []byte) ([]byte, error) {
-	if strings.HasSuffix(name, ".zip") {
-		zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range zr.File {
-			if f.Name == "cloche.exe" && f.Mode().IsRegular() {
-				r, err := f.Open()
-				if err != nil {
-					return nil, err
-				}
-				defer r.Close()
-				return readAtMost(r, maxBinary)
-			}
-		}
-		return nil, fmt.Errorf("%s has no cloche.exe", name)
-	}
 	gz, err := gzip.NewReader(bytes.NewReader(b))
 	if err != nil {
 		return nil, err
@@ -142,9 +121,6 @@ func readAtMost(r io.Reader, n int64) ([]byte, error) {
 func replace(bin string, exe []byte, version string) error {
 	dir := filepath.Dir(bin)
 	next := filepath.Join(dir, ".cloche.new")
-	if runtime.GOOS == "windows" {
-		next += ".exe"
-	}
 	if err := os.WriteFile(next, exe, 0o755); err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			return exit{1, fmt.Sprintf("can't write to %s: update cloche the way you installed it, or as the user who owns that folder", dir)}
@@ -155,19 +131,6 @@ func replace(bin string, exe []byte, version string) error {
 	if got := strings.TrimSpace(string(out)); err != nil || got != "cloche "+version {
 		os.Remove(next)
 		return fmt.Errorf("the downloaded cloche doesn't run here (%q, %v)", got, err)
-	}
-	if runtime.GOOS == "windows" {
-		old := bin + ".old"
-		os.Remove(old)
-		if err := os.Rename(bin, old); err != nil {
-			os.Remove(next)
-			return err
-		}
-		if err := os.Rename(next, bin); err != nil {
-			os.Rename(old, bin)
-			return err
-		}
-		return nil
 	}
 	if err := os.Rename(next, bin); err != nil {
 		os.Remove(next)
