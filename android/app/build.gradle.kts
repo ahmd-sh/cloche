@@ -4,6 +4,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val clocheVersion = providers.fileContents(rootProject.layout.projectDirectory.file("../VERSION")).asText.get().trim()
+val clocheVersionCode = clocheVersion.split(".").let { parts ->
+    require(parts.size == 3 && parts.all { p -> p.toIntOrNull()?.let { it in 0..999 } == true }) { "VERSION must be X.Y.Z, each 0 to 999: $clocheVersion" }
+    parts.fold(0) { code, p -> code * 1000 + p.toInt() }
+}
+
 android {
     namespace = "sh.ahmd.cloche"
     compileSdk {
@@ -14,8 +20,8 @@ android {
         applicationId = "sh.ahmd.cloche"
         minSdk = 34
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.2.6"
+        versionCode = clocheVersionCode
+        versionName = clocheVersion
     }
 
     val releaseKey = System.getenv("CLOCHE_KEYSTORE")?.let(::file)
@@ -26,6 +32,7 @@ android {
                 storePassword = System.getenv("CLOCHE_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("CLOCHE_KEY_ALIAS") ?: "cloche"
                 keyPassword = System.getenv("CLOCHE_KEY_PASSWORD") ?: System.getenv("CLOCHE_KEYSTORE_PASSWORD")
+                enableV3Signing = true
             }
         }
     }

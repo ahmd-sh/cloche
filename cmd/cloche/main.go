@@ -29,6 +29,7 @@ usage:
   cloche unpair [iphone]                     forget the phone, or an iPhone
   cloche setup                               check Tailscale, keep cloche serve running, add the agent skill
   cloche uninstall                           stop cloche serve and remove what setup added
+  cloche version                             this cloche's version
   cloche serve [-listen addr] [-dev]         the computer's half, kept running in the background
 `
 
@@ -53,6 +54,8 @@ func main() {
 		err = status(args)
 	case "unpair":
 		err = unpair(args)
+	case "version", "-version", "--version":
+		fmt.Println("cloche", clocheVersion())
 	case "help", "-h", "-help", "--help":
 		fmt.Print(usage)
 	default:

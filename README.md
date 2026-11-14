@@ -152,6 +152,11 @@ has the wire format.
   With the debug key, any program running as you can sign a replacement
   Cloche, and Android's install prompt is the last check.
 
+Releases are built by GitHub Actions, with build provenance for every file:
+`gh attestation verify cloche-linux-amd64.tar.gz --repo ahmd-sh/cloche`.
+Release APKs are signed by the certificate with SHA-256
+`cd0e700aee2266eff1d3cb8315e237d9a827e8b525903cb4d81fc3772aec563a`.
+
 What it doesn't stop:
 
 - A hijacked agent can push a bad build of any app it can sign, which for
