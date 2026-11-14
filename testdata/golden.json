@@ -1,0 +1,13 @@
+{
+  "key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEyRn/j0CPODmzbcQhh9RZZwYGycHG/deeHtvJQdl5lpRuC/RoIyl+qa2iap2Ow3lBaGP5Z6duusz/OUJGsK7Vpw==",
+  "fingerprint": "107D 0612 3D29 FC73",
+  "inbox": {
+    "head": 1,
+    "deliveries": [
+      {
+        "manifest": "eyJ2IjoxLCJpZCI6Im15cHk2MzUzIiwic2VxIjoxLCJob3N0IjoibWFjIiwicHVzaGVkX2F0IjoiMjAyNi0xMS0wNFQxODowMDowMFoiLCJmaWxlIjp7Im5hbWUiOiJhcHAtZGVidWcuYXBrIiwic2l6ZSI6MTAsInNoYTI1NiI6Ijc4OGRjYzYzZjRiYzc1OThiYjFiYTA2NTk3YmQ1ZTdkOTQ3ZTliN2ZkZjI3MzAzOGM0N2YzNmE5OWZmODY2Y2QifSwibm90ZSI6IlNlc3Npb25zOiByZW5hbWUgaW5saW5lIiwic291cmNlIjp7ImRpciI6Ii9Vc2Vycy9tZS9kZXYvYXBwIiwicmVwbyI6ImFwcCIsImJyYW5jaCI6Im1haW4iLCJjb21taXQiOiIwMjBjNGRkIiwiZGlydHkiOnRydWV9fQ==",
+        "sig": "MEYCIQDp7eHAlTu+Dl117ph1lWRoZ2F1+8SIo4axrtZAZ+411AIhAPjh2mfKHC9sE62Van9sVJk26inpK0ZvTR9HMCmEJPeO"
+      }
+    ]
+  }
+}

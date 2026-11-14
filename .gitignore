@@ -1,0 +1,9 @@
+.DS_Store
+/bin/
+/dist/
+
+*.jks
+*.keystore
+*.p12
+
+/video/public/shots/

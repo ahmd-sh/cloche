@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt">
+    <aapt:attr name="android:drawable">
+        <vector android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+            <group android:scaleX="0.86" android:scaleY="0.86" android:pivotX="54" android:pivotY="54" android:translateY="1.5">
+            <group android:name="rise" android:translateY="7">
+                <path android:pathData="M33.52,80.80L44.70,91.98L7.36,131.86L-6.36,118.14z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="linear" android:startX="39.39" android:startY="86.11" android:endX="35.15" android:endY="90.35">
+                            <item android:offset="0" android:color="#FF164A82" />
+                            <item android:offset="1" android:color="#00164A82" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M37.48,77.83L47.67,88.02L43.92,92.05L33.45,81.58z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="linear" android:startX="35.15" android:startY="79.04" android:endX="46.46" android:endY="90.35">
+                            <item android:offset="0" android:color="#FFC9D8EC" />
+                            <item android:offset="0.35" android:color="#FFF7FAFE" />
+                            <item android:offset="1" android:color="#FF9FB5D3" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M40.65,86.14a1.25,1.25 0 1,0 2.50,0a1.25,1.25 0 1,0 -2.50,0z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="radial" android:centerX="41.62" android:centerY="85.86" android:gradientRadius="1.60">
+                            <item android:offset="0" android:color="#FFE9FFF7" />
+                            <item android:offset="1" android:color="#FF7FD9BC" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M38.12,78.47C43.2,74.6 44.6,70.8 48.2,69.8C54.5,69.0 64.5,68.9 71.0,69.0C74.4,68.6 77.4,68.4 77.9,69.9C78.5,71.8 76.6,74.6 72.4,75.4C68.2,76.1 63.6,76.0 60.2,76.6C56.4,77.3 54.8,79.4 47.03,87.38z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="linear" android:startX="52.00" android:startY="68.60" android:endX="56.00" android:endY="84.00">
+                            <item android:offset="0" android:color="#FFC3D3E9" />
+                            <item android:offset="0.18" android:color="#FFF8FBFF" />
+                            <item android:offset="0.55" android:color="#FFE4EDF8" />
+                            <item android:offset="1" android:color="#FFA9BEDB" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M62.0,71.4C66.5,71.2 71.5,71.0 76.6,70.6" android:strokeColor="#FF94ABCB" android:strokeWidth="0.7" android:strokeLineCap="round" />
+                <path android:pathData="M61.4,73.6C65.6,73.6 70.0,73.4 74.6,72.9" android:strokeColor="#FF94ABCB" android:strokeWidth="0.7" android:strokeLineCap="round" />
+                <path android:pathData="M57.6,70.8C58.4,72.6 59.2,74.4 60.6,76.2" android:strokeColor="#FFA3B8D5" android:strokeWidth="0.6" android:strokeLineCap="round" />
+                <path android:pathData="M23.80,65.40a30.20,3.60 0 1,0 60.40,0a30.20,3.60 0 1,0 -60.40,0z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="linear" android:startX="24.00" android:startY="65.00" android:endX="84.00" android:endY="65.00">
+                            <item android:offset="0" android:color="#FF6E8DB8" />
+                            <item android:offset="0.3" android:color="#FFA9C0DE" />
+                            <item android:offset="1" android:color="#FF5B7AA6" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M22.80,63.70a31.20,3.50 0 1,0 62.40,0a31.20,3.50 0 1,0 -62.40,0z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="linear" android:startX="23.00" android:startY="62.00" android:endX="85.00" android:endY="66.00">
+                            <item android:offset="0" android:color="#FFD2E0F2" />
+                            <item android:offset="0.28" android:color="#FFFFFFFF" />
+                            <item android:offset="0.6" android:color="#FFDCE7F5" />
+                            <item android:offset="1" android:color="#FFA2B9D9" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <path android:pathData="M31.00,62.90a25.00,1.70 0 1,0 50.00,0a25.00,1.70 0 1,0 -50.00,0z">
+                    <aapt:attr name="android:fillColor">
+                        <gradient android:type="radial" android:centerX="56.00" android:centerY="62.90" android:gradientRadius="25.00">
+                            <item android:offset="0" android:color="#550F3D6E" />
+                            <item android:offset="1" android:color="#000F3D6E" />
+                        </gradient>
+                    </aapt:attr>
+                </path>
+                <group android:name="lid" android:pivotX="54" android:pivotY="62">
+                    <path android:pathData="M31.5,61C31.5,42.5 41.2,31 54,31C66.8,31 76.5,42.5 76.5,61z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:type="linear" android:startX="31.50" android:startY="46.00" android:endX="76.50" android:endY="46.00">
+                                <item android:offset="0" android:color="#FFB9CCE5" />
+                                <item android:offset="0.16" android:color="#FFFFFFFF" />
+                                <item android:offset="0.4" android:color="#FFEAF1FA" />
+                                <item android:offset="0.74" android:color="#FFAFC4E0" />
+                                <item android:offset="1" android:color="#FF7C98C0" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                    <path android:pathData="M31.5,61C31.5,42.5 41.2,31 54,31C66.8,31 76.5,42.5 76.5,61z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:type="linear" android:startX="54.00" android:startY="31.00" android:endX="54.00" android:endY="61.00">
+                                <item android:offset="0" android:color="#00FFFFFF" />
+                                <item android:offset="0.55" android:color="#000F3D6E" />
+                                <item android:offset="1" android:color="#660F3D6E" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                    <path android:pathData="M66.4,40.6C70.6,44.4 73.0,49.6 73.2,56.0" android:strokeColor="#B3FFFFFF" android:strokeWidth="1.4" android:strokeLineCap="round" />
+                    <path android:pathData="M37.6,51.5C37.4,43.9 41.6,37.4 47.8,34.6" android:strokeColor="#FFFFFFFF" android:strokeWidth="2.6" android:strokeLineCap="round" />
+                    <path android:pathData="M31.2,59.6H76.8A1.6,1.6 0 0 1 78.4,61.2V61.2A1.6,1.6 0 0 1 76.8,62.8H31.2A1.6,1.6 0 0 1 29.6,61.2V61.2A1.6,1.6 0 0 1 31.2,59.6z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:type="linear" android:startX="29.60" android:startY="61.00" android:endX="78.40" android:endY="61.00">
+                                <item android:offset="0" android:color="#FF93ACCF" />
+                                <item android:offset="0.2" android:color="#FFF4F8FD" />
+                                <item android:offset="0.55" android:color="#FFC9D8EC" />
+                                <item android:offset="1" android:color="#FF6F8DB8" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                    <path android:pathData="M53.2,28.6H54.8A0.8,0.8 0 0 1 55.6,29.4V31A0.8,0.8 0 0 1 54.8,31.8H53.2A0.8,0.8 0 0 1 52.4,31V29.4A0.8,0.8 0 0 1 53.2,28.6z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:type="linear" android:startX="52.40" android:startY="30.00" android:endX="55.60" android:endY="30.00">
+                                <item android:offset="0" android:color="#FFD7E3F3" />
+                                <item android:offset="1" android:color="#FF7C98C0" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                    <path android:pathData="M50.40,26.60a3.60,3.30 0 1,0 7.20,0a3.60,3.30 0 1,0 -7.20,0z">
+                        <aapt:attr name="android:fillColor">
+                            <gradient android:type="radial" android:centerX="52.70" android:centerY="25.40" android:gradientRadius="4.60">
+                                <item android:offset="0" android:color="#FFFFFFFF" />
+                                <item android:offset="0.45" android:color="#FFD8E5F5" />
+                                <item android:offset="1" android:color="#FF7F9BC2" />
+                            </gradient>
+                        </aapt:attr>
+                    </path>
+                </group>
+                <group android:name="spark1" android:pivotX="74.5" android:pivotY="33.0" android:scaleX="0" android:scaleY="0">
+                    <path android:pathData="M74.5,28.8Q74.5,33.0 78.7,33.0Q74.5,33.0 74.5,37.2Q74.5,33.0 70.3,33.0Q74.5,33.0 74.5,28.8z" android:fillColor="#FFFFFFFF" android:fillAlpha="1" />
+                </group>
+                <group android:name="spark2" android:pivotX="80.5" android:pivotY="41.0" android:scaleX="0" android:scaleY="0">
+                    <path android:pathData="M80.5,38.4Q80.5,41.0 83.1,41.0Q80.5,41.0 80.5,43.6Q80.5,41.0 77.9,41.0Q80.5,41.0 80.5,38.4z" android:fillColor="#FFFFFFFF" android:fillAlpha="1" />
+                </group>
+            </group>
+            </group>
+        </vector>
+    </aapt:attr>
+    <target android:name="rise">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:startOffset="0" android:duration="280" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="7" />
+                        <keyframe android:fraction="1" android:value="0" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="lid">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:startOffset="300" android:duration="380" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.2" android:value="-8" />
+                        <keyframe android:fraction="0.42" android:value="6" />
+                        <keyframe android:fraction="0.62" android:value="-4" />
+                        <keyframe android:fraction="0.82" android:value="2" />
+                        <keyframe android:fraction="1" android:value="0" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="300" android:duration="380" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.2" android:value="-2.6" />
+                        <keyframe android:fraction="0.42" android:value="-0.8" />
+                        <keyframe android:fraction="0.62" android:value="-1.8" />
+                        <keyframe android:fraction="0.82" android:value="-0.4" />
+                        <keyframe android:fraction="1" android:value="0" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="700" android:duration="150" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="translateY" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="1" android:value="-3.5" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="700" android:duration="150" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="1" android:value="-5" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="spark1">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:startOffset="600" android:duration="250" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="scaleX" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.6" android:value="1.2" />
+                        <keyframe android:fraction="1" android:value="1" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="600" android:duration="250" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.6" android:value="1.2" />
+                        <keyframe android:fraction="1" android:value="1" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="600" android:duration="250" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="-30" />
+                        <keyframe android:fraction="1" android:value="0" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+    <target android:name="spark2">
+        <aapt:attr name="android:animation">
+            <set android:ordering="together">
+                <objectAnimator android:startOffset="690" android:duration="160" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="scaleX" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.6" android:value="1.2" />
+                        <keyframe android:fraction="1" android:value="1" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="690" android:duration="160" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="scaleY" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="0" />
+                        <keyframe android:fraction="0.6" android:value="1.2" />
+                        <keyframe android:fraction="1" android:value="1" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+                <objectAnimator android:startOffset="690" android:duration="160" android:interpolator="@android:interpolator/fast_out_slow_in">
+                    <propertyValuesHolder android:propertyName="rotation" android:valueType="floatType">
+                        <keyframe android:fraction="0" android:value="-30" />
+                        <keyframe android:fraction="1" android:value="0" />
+                    </propertyValuesHolder>
+                </objectAnimator>
+            </set>
+        </aapt:attr>
+    </target>
+</animated-vector>
