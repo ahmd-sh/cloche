@@ -85,3 +85,12 @@ func removeService() (string, error) {
 	systemctl("daemon-reload")
 	return "systemd", nil
 }
+
+func serviceInstalled() bool {
+	unit, err := unitPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(unit)
+	return err == nil
+}

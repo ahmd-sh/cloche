@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -18,6 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ahmd-sh/cloche/internal/tailnet"
@@ -35,6 +38,24 @@ var staticTypes = map[string]string{
 
 const WebPort = 41780
 
+var serviceWorker = sync.OnceValue(func() []byte {
+	h := sha256.New()
+	fs.WalkDir(webFiles, "web", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := webFiles.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "%s %d\n", p, len(b))
+		h.Write(b)
+		return nil
+	})
+	b, _ := webFiles.ReadFile("web/sw.js")
+	return bytes.Replace(b, []byte("'cloche-files'"), []byte("'cloche-"+hex.EncodeToString(h.Sum(nil))[:12]+"'"), 1)
+})
+
 //go:embed web
 var webFiles embed.FS
 
@@ -49,6 +70,11 @@ func (h *Host) WebApp() http.Handler {
 	mux.HandleFunc("GET /{$}", shell)
 	mux.HandleFunc("GET /pair", shell)
 	mux.HandleFunc("GET /b/{id}", shell)
+	mux.HandleFunc("GET /sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", staticTypes[".js"])
+		w.Write(serviceWorker())
+	})
 	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
 		for ext, typ := range staticTypes {

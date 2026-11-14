@@ -54,6 +54,8 @@ type Config struct {
 	Web         string
 	SignProfile func([]byte) ([]byte, error)
 	PushHTTP    *http.Client
+
+	Version string
 }
 
 type Host struct {
@@ -85,6 +87,9 @@ type Host struct {
 	seenAt  map[string]time.Time
 	served  map[string]int64
 	epoch   int64
+
+	version string
+	update  string
 }
 
 type state struct {
@@ -99,6 +104,10 @@ type phone struct {
 	Device   string    `json:"device"`
 	Secret   string    `json:"secret_sha256"`
 	PairedAt time.Time `json:"paired_at"`
+
+	App        string `json:"app,omitempty"`
+	AppCode    int64  `json:"app_code,omitempty"`
+	AppOffered string `json:"app_offered,omitempty"`
 }
 
 type record struct {
@@ -164,6 +173,7 @@ func Open(c Config) (*Host, error) {
 		web: strings.TrimSuffix(c.Web, "/"), signProfile: c.SignProfile,
 		changed: make(chan struct{}), closed: make(chan struct{}),
 		seenAt: map[string]time.Time{}, served: map[string]int64{},
+		version: c.Version,
 	}
 	h.pusher = &webpush.Sender{Key: pushKey, Subject: h.web, HTTP: c.PushHTTP}
 	if h.pusher.Subject == "" {
@@ -484,6 +494,8 @@ type Status struct {
 	Pairing     time.Time      `json:"pairing,omitzero"`
 	Epoch       int64          `json:"epoch"`
 	Deliveries  []Summary      `json:"deliveries"`
+	Version     string         `json:"version,omitempty"`
+	Update      string         `json:"update,omitempty"`
 }
 
 type PhoneStatus struct {
@@ -492,17 +504,20 @@ type PhoneStatus struct {
 	PairedAt time.Time `json:"paired_at"`
 	Live     bool      `json:"live"`
 	Seen     time.Time `json:"seen,omitzero"`
+	App      string    `json:"app,omitempty"`
+	AppCode  int64     `json:"app_code,omitempty"`
 }
 
 func (h *Host) status() Status {
 	s := Status{Host: h.name, Addr: h.addr, Fingerprint: h.Fingerprint(), Deliveries: []Summary{}}
 	if p := h.state.Phone; p != nil {
-		s.Phone = &PhoneStatus{Name: p.Name, Device: p.Device, PairedAt: p.PairedAt, Live: h.polls > 0, Seen: h.seen}
+		s.Phone = &PhoneStatus{Name: p.Name, Device: p.Device, PairedAt: p.PairedAt, Live: h.polls > 0, Seen: h.seen, App: p.App, AppCode: p.AppCode}
 	}
 	if h.pairing != nil && h.now().Before(h.pairing.expires) {
 		s.Pairing = h.pairing.expires
 	}
 	s.Web, s.WebErr, s.Epoch = h.web, h.webErr, h.epoch
+	s.Version, s.Update = h.version, h.update
 	for _, ip := range h.state.IPhones {
 		s.IPhones = append(s.IPhones, h.iphoneStatus(ip))
 	}
@@ -742,4 +757,35 @@ func describe(m wire.Manifest) string {
 	}
 
 	return fmt.Sprintf("%s, %.1f MB", what, float64(m.File.Size)/(1<<20))
+}
+
+func (h *Host) SetUpdate(v string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.update = v
+}
+
+type PhoneApp struct {
+	Code    int64
+	Offered string
+}
+
+func (h *Host) PhoneApp() (PhoneApp, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	p := h.state.Phone
+	if p == nil {
+		return PhoneApp{}, false
+	}
+	return PhoneApp{Code: p.AppCode, Offered: p.AppOffered}, true
+}
+
+func (h *Host) SetAppOffered(v string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.state.Phone == nil {
+		return nil
+	}
+	h.state.Phone.AppOffered = v
+	return h.saveState()
 }

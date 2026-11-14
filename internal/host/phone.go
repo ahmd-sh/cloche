@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -135,6 +136,10 @@ func (h *Host) inbox(w http.ResponseWriter, r *http.Request) {
 	h.polls++
 	h.seen = h.now()
 	paired := h.state.Phone
+	if name, code, ok := appVersion(r.UserAgent()); ok && paired != nil && (paired.App != name || paired.AppCode != code) {
+		paired.App, paired.AppCode = name, code
+		h.saveState()
+	}
 	h.broadcast()
 	h.mu.Unlock()
 	defer func() {
@@ -174,6 +179,20 @@ func (h *Host) inbox(w http.ResponseWriter, r *http.Request) {
 	}
 	h.mu.Unlock()
 	reply(w, in)
+}
+
+var userAgent = regexp.MustCompile(`^Cloche/([0-9A-Za-z.+-]{1,40}) \(([0-9]{1,10})\)$`)
+
+func appVersion(ua string) (string, int64, bool) {
+	m := userAgent.FindStringSubmatch(ua)
+	if m == nil {
+		return "", 0, false
+	}
+	code, err := strconv.ParseInt(m[2], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return m[1], code, true
 }
 
 func (h *Host) apk(w http.ResponseWriter, r *http.Request) {

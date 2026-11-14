@@ -9,6 +9,7 @@ import org.junit.Test
 import sh.ahmd.cloche.link.Inbox
 import sh.ahmd.cloche.link.PairTicket
 import sh.ahmd.cloche.link.Signed
+import sh.ahmd.cloche.link.USER_AGENT
 import sh.ahmd.cloche.link.json
 import sh.ahmd.cloche.link.sha256
 import java.io.File
@@ -85,5 +86,10 @@ class WireTest {
         assertEquals("my-laptop:41778", PairTicket.typed(" my-laptop ", "x").addr)
         assertEquals("100.1.2.3:9", PairTicket.typed("100.1.2.3:9", "x").addr)
         assertEquals("my-laptop", PairTicket.typed("my-laptop.tail1234.ts.net", "x").host)
+    }
+
+    @Test
+    fun userAgentIsWhatTheComputerReads() {
+        assertTrue(USER_AGENT, Regex("""Cloche/[0-9A-Za-z.+-]{1,40} \([0-9]{1,10}\)""").matches(USER_AGENT))
     }
 }

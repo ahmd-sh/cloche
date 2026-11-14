@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE = 'cloche-2';
+const CACHE = 'cloche-files';
 const SHELL = ['/', '/app.js', '/style.css', '/manifest.webmanifest', '/icon-180.png', '/icon-192.png', '/fonts/plex_mono_regular.ttf', '/fonts/plex_mono_semibold.ttf'];
 
 self.addEventListener('install', (e) => {

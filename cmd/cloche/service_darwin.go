@@ -53,3 +53,12 @@ func removeService() (string, error) {
 	}
 	return "launchd", nil
 }
+
+func serviceInstalled() bool {
+	plist, _, err := launchdPaths()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(plist)
+	return err == nil
+}

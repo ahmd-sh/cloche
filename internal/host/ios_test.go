@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -541,5 +542,16 @@ func TestWebHeadersAndPaths(t *testing.T) {
 	h.mu.Unlock()
 	if src.Repo != "satchelgpj" || src.Commit != "abc[2J" || src.Dir != "/Users/me/dev/satchel" {
 		t.Errorf("source kept as %+v", src)
+	}
+}
+
+func TestServiceWorkerCacheFollowsTheFiles(t *testing.T) {
+	h := newWebHost(t, nil)
+	w := webCall(t, h, iphoneIP, "GET", "/sw.js", nil)
+	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/javascript") {
+		t.Fatalf("sw.js: %d %s", w.Code, w.Header().Get("Content-Type"))
+	}
+	if !regexp.MustCompile(`const CACHE = 'cloche-[0-9a-f]{12}';`).Match(w.Body.Bytes()) {
+		t.Errorf("sw.js cache name: %s", strings.SplitN(w.Body.String(), "\n", 4)[2])
 	}
 }

@@ -69,6 +69,19 @@ cloche serve -dev                    # loopback only, no Tailscale checks (CLOCH
 adb reverse tcp:41778 tcp:41778
 ```
 
+## Update
+
+```sh
+cloche update
+```
+
+`cloche serve` checks GitHub for a new release once a day, and `cloche
+status` says when one is out. `cloche update` downloads it, checks it
+against the release's checksums, replaces cloche and restarts the service.
+The phone then gets the new Cloche like any build: a notification, and a
+tap installs it. iPhones get the new web app the next time they open it.
+To turn the check off: `CLOCHE_NO_UPDATE_CHECK=1 cloche setup`.
+
 ## iPhones
 
 iPhones use a web app. iOS installs an app from an `itms-services://` link
@@ -175,7 +188,10 @@ has the wire format.
 Releases are built by GitHub Actions, with build provenance for every file:
 `gh attestation verify cloche-linux-amd64.tar.gz --repo ahmd-sh/cloche`.
 Release APKs are signed by the certificate with SHA-256
-`cd0e700aee2266eff1d3cb8315e237d9a827e8b525903cb4d81fc3772aec563a`.
+`cd0e700aee2266eff1d3cb8315e237d9a827e8b525903cb4d81fc3772aec563a`. The
+install scripts and `cloche update` check each download against the
+release's checksums, fetched from GitHub over HTTPS. Android installs a
+new Cloche over the old one only when the same key signed both.
 
 What it doesn't stop:
 

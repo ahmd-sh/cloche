@@ -30,8 +30,9 @@ Then carry on. Don't wait for the install unless the next step needs it.
   (exit 4). Use it only when what you do next depends on the install.
 - `cloche status` shows the phone (connected, or when it was last seen) and
   recent deliveries with what became of each.
-- If push says cloche isn't running:
-  `launchctl kickstart -k gui/$(id -u)/sh.ahmd.cloche`.
+- If push says cloche isn't running, `cloche setup` starts it again.
+- If `cloche status` says an update is out, tell the user. Run
+  `cloche update` only when they ask.
 - The phone refuses a build signed with a different key from the installed
   app (or from the one Cloche first installed), or with a lower versionCode
   than the installed one. If a push comes back refused, tell the user why

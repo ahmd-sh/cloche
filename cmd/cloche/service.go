@@ -23,7 +23,7 @@ type service struct {
 
 func serviceEnv() map[string]string {
 	env := map[string]string{}
-	for _, k := range []string{"CLOCHE_HOME", "ANDROID_HOME", "ANDROID_SDK_ROOT"} {
+	for _, k := range []string{"CLOCHE_HOME", "ANDROID_HOME", "ANDROID_SDK_ROOT", noUpdateCheck} {
 		if v := os.Getenv(k); v != "" {
 			env[k] = v
 		}

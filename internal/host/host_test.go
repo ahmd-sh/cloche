@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -429,5 +430,59 @@ func TestNoOwner(t *testing.T) {
 	}
 	if !h2.ownedBy(tailnet.Peer{Login: "me@github"}) {
 		t.Error("my own node doesn't count as mine")
+	}
+}
+
+func TestPhoneReportsItsApp(t *testing.T) {
+	h := newHost(t)
+	res := pairPhone(t, h)
+	poll := func(ua string) {
+		t.Helper()
+		req := httptest.NewRequest("GET", "/v1/inbox?after=0&wait=0", nil)
+		req.Host = "100.64.0.1:41778"
+		req.RemoteAddr = phoneIP + ":40000"
+		req.Header.Set("Authorization", "Bearer "+res.Secret)
+		req.Header.Set("User-Agent", ua)
+		w := httptest.NewRecorder()
+		h.PhoneAPI().ServeHTTP(w, req)
+		if w.Code != 200 {
+			t.Fatalf("inbox: %d %s", w.Code, w.Body)
+		}
+	}
+	poll("Cloche/0.3.0 (3000)")
+	for _, ua := range []string{"Dalvik/2.1.0 (Linux; U; Android 16)", "Cloche/0.3.0 (abc)", "Cloche/0.3.0 (3000) extra", "Cloche/<b> (3000)"} {
+		poll(ua)
+	}
+	h.mu.Lock()
+	st := h.status()
+	h.mu.Unlock()
+	if st.Phone.App != "0.3.0" || st.Phone.AppCode != 3000 {
+		t.Errorf("phone's app: %q %d", st.Phone.App, st.Phone.AppCode)
+	}
+	if err := h.SetAppOffered("0.3.1"); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := Open(Config{Dir: h.dir, Peers: h.peers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app, ok := h2.PhoneApp(); !ok || app.Code != 3000 || app.Offered != "0.3.1" {
+		t.Errorf("reopened with %+v", app)
+	}
+}
+
+func TestPairLinkOpensThePairPage(t *testing.T) {
+	h := newHost(t)
+	p, err := h.StartPairing(time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frag, ok := strings.CutPrefix(p.URL, "https://ahmd-sh.github.io/cloche/pair/#")
+	if !ok {
+		t.Fatalf("pairing link %s", p.URL)
+	}
+	q, err := url.ParseQuery(frag)
+	if err != nil || q.Get("c") != p.Code || q.Get("a") != "100.64.0.1:41778" || q.Get("h") != "mac" || len(q.Get("f")) != 43 {
+		t.Errorf("pairing link %s: %v", p.URL, q)
 	}
 }

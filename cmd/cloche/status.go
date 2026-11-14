@@ -32,9 +32,9 @@ func status(args []string) error {
 	case p == nil:
 		fmt.Println("phone   none paired: run cloche pair")
 	case p.Live:
-		fmt.Printf("phone   %s · connected\n", p.Name)
+		fmt.Printf("phone   %s · connected%s\n", p.Name, app(p))
 	case !p.Seen.IsZero():
-		fmt.Printf("phone   %s · offline, last seen %s\n", p.Name, ago(p.Seen))
+		fmt.Printf("phone   %s · offline, last seen %s%s\n", p.Name, ago(p.Seen), app(p))
 	default:
 		fmt.Printf("phone   %s · hasn't connected since pairing\n", p.Name)
 	}
@@ -61,6 +61,9 @@ func status(args []string) error {
 		fmt.Printf("web     down: %s\n", st.WebErr)
 	case st.Web != "" && len(st.IPhones) == 0:
 		fmt.Printf("web     %s, for iPhones: cloche pair -ios\n", st.Web)
+	}
+	if st.Update != "" {
+		fmt.Printf("update  cloche %s is out: cloche update\n", st.Update)
 	}
 	if !st.Pairing.IsZero() {
 		fmt.Printf("pairing open until %s\n", st.Pairing.Local().Format("15:04"))
@@ -98,6 +101,13 @@ func status(args []string) error {
 		}
 	}
 	return nil
+}
+
+func app(p *host.PhoneStatus) string {
+	if p.App == "" {
+		return ""
+	}
+	return " · Cloche " + p.App
 }
 
 func iphoneState(d host.Summary) string {

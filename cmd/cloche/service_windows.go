@@ -41,7 +41,7 @@ func installService(bin string, env map[string]string) (service, error) {
 	}
 	s := service{how: "Task Scheduler, logs in " + filepath.Join(home(), "serve.log")}
 	if len(env) > 0 {
-		s.notes = append(s.notes, "The task runs with your user's environment variables. If cloche serve needs CLOCHE_HOME or ANDROID_HOME, set them for your user.")
+		s.notes = append(s.notes, "The task runs with your user's environment variables. If cloche serve needs CLOCHE_HOME, ANDROID_HOME or CLOCHE_NO_UPDATE_CHECK, set them for your user.")
 	}
 	return s, nil
 }
@@ -52,4 +52,8 @@ func removeService() (string, error) {
 		return "", err
 	}
 	return "Task Scheduler", nil
+}
+
+func serviceInstalled() bool {
+	return exec.Command("schtasks", "/Query", "/TN", taskName).Run() == nil
 }

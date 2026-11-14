@@ -101,7 +101,7 @@ func serve(args []string) error {
 	}
 	h, err := host.Open(host.Config{
 		Dir: home(), Name: name, Addr: addr, Peers: peers, Owner: owner, AnyOwner: *dev, DNSName: dnsName, Log: logger,
-		Web: web,
+		Web: web, Version: clocheVersion(),
 		SignProfile: func(b []byte) ([]byte, error) {
 			if webCerts == nil {
 				return nil, errors.New("no certificate")
@@ -179,7 +179,10 @@ func serve(args []string) error {
 		ErrorLog:          logger,
 	}
 	go phoneSrv.Serve(pl)
-	logger.Printf("cloche on %s for the phone, key %s", addr, h.Fingerprint())
+	logger.Printf("cloche %s on %s for the phone, key %s", clocheVersion(), addr, h.Fingerprint())
+	if !*dev {
+		go watchReleases(ctx, h, logger)
+	}
 	if *dev {
 		logger.Printf("development: anyone on loopback is the phone (adb reverse tcp:%d tcp:%d)", wire.Port, wire.Port)
 	}

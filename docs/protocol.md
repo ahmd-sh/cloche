@@ -42,6 +42,10 @@ GET /v1/inbox?after=11&wait=270
 → 200 {"head": 12, "deliveries": [{"manifest": "<base64>", "sig": "<base64>"}]}
 ```
 
+Every request carries `User-Agent: Cloche/<versionName> (<versionCode>)`.
+The computer keeps the latest, shows it in `cloche status`, and sends the
+phone its own release's Cloche when the phone's is older.
+
 Held open up to `wait` seconds (at most 300) until there's a delivery after
 `after`, then answered with all of them, oldest first. The phone moves its
 cursor to `head`, and polls again at once. A cursor past `head` (the computer's

@@ -7,6 +7,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import sh.ahmd.cloche.BuildConfig
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -77,6 +78,7 @@ class Api(private val net: Network?, private val addr: String, private val secre
         c.readTimeout = readTimeout
         c.useCaches = false
         c.instanceFollowRedirects = false
+        c.setRequestProperty("User-Agent", USER_AGENT)
         secret?.let { c.setRequestProperty("Authorization", "Bearer $it") }
         return c
     }
@@ -100,6 +102,8 @@ class Api(private val net: Network?, private val addr: String, private val secre
         }
     }
 }
+
+const val USER_AGENT = "Cloche/${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
 private suspend fun <T> HttpURLConnection.call(block: (HttpURLConnection) -> T): T = coroutineScope {
     val conn = this@call
