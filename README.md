@@ -1,4 +1,6 @@
-# cloche
+# Cloche - Let AI ship you builds
+
+<p align="center"><img src="docs/banner.png" alt="Cloche"></p>
 
 Cloche delivers app builds to your phone over Tailscale. An agent on your
 computer pushes an APK, the phone downloads and checks it, and a tap
@@ -9,6 +11,12 @@ cloche push ──unix socket──▶ cloche serve ◀──tailnet (HTTP, long
   (agent)                     (computer)                                 notifies; a tap installs
 ```
 
+## Install on macOS and Linux
+
+```sh
+curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
+```
+
 ## Use
 
 ```sh
@@ -17,22 +25,17 @@ cloche push app-debug.apk -wait   # until it's installed (0), refused/failed/dec
 cloche status                     # the phone, and what became of recent builds
 ```
 
-`cloche setup` adds a skill that tells Claude Code how to use cloche.
+`cloche setup` will add a skill that tells Claude Code how to use cloche.
 
 ## Set up
 
 Cloche needs [Tailscale](https://tailscale.com/download) on the computer and
 the phone, signed in to the same account.
 
-macOS and Linux:
-
-```sh
-curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
-```
-
-The script downloads cloche from the latest release, checks it against the
-release's checksums, puts it in `~/.local/bin`, and runs `cloche setup`. With
-Go: `go install github.com/ahmd-sh/cloche/cmd/cloche@latest && cloche setup`.
+The install script downloads cloche from the latest release, checks it
+against the release's checksums, puts it in `~/.local/bin`, and runs `cloche
+setup`. With Go: `go install github.com/ahmd-sh/cloche/cmd/cloche@latest &&
+cloche setup`.
 
 `cloche setup` runs `cloche serve` with launchd on macOS or a systemd user
 service on Linux, and adds the agent skill. `cloche uninstall` removes both.
@@ -43,8 +46,8 @@ Then pair the phone:
 cloche pair     # scan the code with the phone's camera, or type it into Cloche
 ```
 
-The code opens a page that helps install Tailscale and Cloche on the phone,
-then pairs them.
+The code will open a page that helps install Tailscale and Cloche on the
+phone, then pairs them.
 
 To build the app yourself: `cd android && ./gradlew assembleRelease`. Cloche
 updates itself like any other build:
@@ -70,8 +73,9 @@ cloche update
 `cloche serve` checks GitHub for a new release once a day, and `cloche
 status` says when one is out. `cloche update` downloads it, checks it
 against the release's checksums, replaces cloche and restarts the service.
-The phone then gets the new Cloche like any build: a notification, and a
-tap installs it. iPhones get the new web app the next time they open it.
+The phone will then get the new Cloche like any build: a notification, and
+a tap installs it. iPhones will get the new web app the next time they open
+it.
 To turn the check off: `CLOCHE_NO_UPDATE_CHECK=1 cloche setup`.
 
 ## iPhones
@@ -97,20 +101,20 @@ After pairing, the web app:
 
 Each push sends a notification. Tapping it opens the build, and Install
 hands it to iOS, which asks, downloads it and installs it. iOS doesn't
-report whether the install finished. `cloche status` shows progress up to
-downloaded.
+report whether the install finished. `cloche status` will show progress
+up to downloaded.
 
 Requirements:
 
 - **HTTPS certificates on for the tailnet**, on the admin console's [DNS
   page](https://login.tailscale.com/admin/dns). Let's Encrypt issues the
   certificate, which puts the computer's tailnet name
-  (`name.tailnet.ts.net`) in public certificate logs. `cloche status` says
-  when the web app is down and why.
+  (`name.tailnet.ts.net`) in public certificate logs. `cloche status` will
+  say when the web app is down and why.
 - **A build signed for the iPhone**: development or ad hoc, with a
   provisioning profile listing its UDID. Anyone else's iPhone needs a paid
   Apple Developer account. `cloche push` refuses builds iOS would refuse and
-  says why. An unsigned build goes as a download, for SideStore or AltStore
+  says why. An unsigned build will go as a download, for SideStore or AltStore
   to sign with the iPhone owner's Apple ID.
 - **For a friend**: Tailscale on their iPhone, and this computer shared with
   them (admin console, the computer's menu, Share). Sharing gives them this
@@ -125,7 +129,7 @@ Requirements:
   ]
   ```
 
-  Their iPhone sees only the builds pushed to it with `-to`.
+  Their iPhone will see only the builds pushed to it with `-to`.
 
 The web app's port is 41780. For the iOS Simulator, `cloche serve -dev`
 serves it at `https://localhost:41780` with a local CA. Trust the CA with
@@ -154,16 +158,15 @@ has the wire format.
   that key, and every file is checked against the manifest's hash. The phone
   pairs only with tailnet addresses and connects only through Tailscale's
   VPN. A link can't point it at the internet through an exit node, or at
-  another app on the phone. Pairing with a new computer shows which one it
-  replaces.
-- **What installs.** Nothing installs without a tap. The phone reads each
-  APK itself and goes by what it reads. It refuses a build signed with a
+  another app on the phone. Pairing with a new computer will show which one
+  it will replace.
+- **What installs.** The phone reads each APK itself and goes by what it reads. It refuses a build signed with a
   different key from the installed app, or from the key it pinned when it
   first installed that app, which it keeps after an uninstall. It refuses a
   build older than the installed one. An app it hasn't seen before gets no
   one-tap Install. Only Cloche's own notifications can open a build's
-  Install. Updates to Cloche itself also go through Android's install
-  prompt.
+  Install. Updates to Cloche itself will also go through Android's
+  install prompt.
 - **iPhones.** The web app answers only on the computer's tailnet name.
   Tailscale identifies the node behind each request. A paired iPhone sees
   only its own builds. Requests that change anything must come from the web
@@ -182,20 +185,20 @@ Releases are built by GitHub Actions, with build provenance for every file:
 Release APKs are signed by the certificate with SHA-256
 `cd0e700aee2266eff1d3cb8315e237d9a827e8b525903cb4d81fc3772aec563a`. The
 install scripts and `cloche update` check each download against the
-release's checksums, fetched from GitHub over HTTPS. Android installs a
-new Cloche over the old one only when the same key signed both.
+release's checksums, fetched from GitHub over HTTPS. Android will install
+a new Cloche over the old one only when the same key signed both.
 
 What it doesn't stop:
 
 - A hijacked agent can push a bad build of any app it can sign, which for
   debug builds is any app signed with `~/.android/debug.keystore`. Your tap
-  is the check, and the build's sheet shows what the phone read from the
-  APK.
+  is the check, and the build's sheet will show what the phone read from
+  the APK.
 - A build's source (repo, branch, commit) is whatever the push says. `cloche
   push` reads it from git, and any program that can push can set it.
 - The CLI's socket gives full control to any program running as you: push,
   pair, unpair, or send a build to a friend's iPhone with `-to`. The skill
-  asks agents to send to a friend only when asked. Nothing enforces it.
+  asks agents to send to a friend only when asked.
 - An iPhone is known by its Tailscale node alone. Any app on a paired iPhone
   can list and download that iPhone's builds.
 
