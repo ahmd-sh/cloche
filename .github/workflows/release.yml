@@ -97,7 +97,8 @@ jobs:
           tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
           "$tools/apksigner" verify --print-certs "$apk" > certs.txt
           cat certs.txt
-          if [ "$(grep -c '^Signer #[0-9]* certificate SHA-256 digest:' certs.txt)" != 1 ] || ! grep -qx "Signer #1 certificate SHA-256 digest: $CERT_SHA256" certs.txt; then
+          digests=$(grep -Eo 'certificate SHA-256 digest: [0-9a-f]{64}$' certs.txt | grep -Eo '[0-9a-f]{64}$' || :)
+          if [ "$digests" != "$CERT_SHA256" ]; then
             echo "::error::cloche.apk isn't signed by the release key alone"
             exit 1
           fi
