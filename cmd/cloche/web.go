@@ -19,6 +19,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -110,6 +112,9 @@ func (c *certs) keep(ctx context.Context, ts *tailnet.CLI, name string, state *w
 				if err = ts.Cert(ctx, name, c.certFile, c.keyFile); err == nil {
 					err = c.load()
 				}
+			}
+			if err != nil && runtime.GOOS == "linux" && strings.Contains(strings.ToLower(err.Error()), "access denied") {
+				err = fmt.Errorf("%w: let your user fetch it with sudo tailscale set --operator=$USER", err)
 			}
 			if err != nil {
 				logger.Printf("web app certificate: %v", err)

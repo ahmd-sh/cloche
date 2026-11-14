@@ -17,21 +17,25 @@ cloche push app-debug.apk -wait   # until it's installed (0), refused/failed/dec
 cloche status                     # the phone, and what became of recent builds
 ```
 
-In Claude Code, `skill/SKILL.md` tells the agent how to use cloche.
+`cloche setup` adds a skill that tells Claude Code how to use cloche.
 
 ## Set up
 
+Cloche needs [Tailscale](https://tailscale.com/download) on the computer and
+the phone, signed in to the same account.
+
 ```sh
-scripts/setup.sh pixel-10-pro   # installs cloche, keeps cloche serve running, links the skill,
-                                # and sends the app to the phone over Taildrop
-cloche pair                     # scan the code with the phone's camera, or type it into Cloche
+go install github.com/ahmd-sh/cloche/cmd/cloche@latest
+cloche setup    # checks Tailscale, keeps cloche serve running, adds the agent skill
+cloche pair     # scan the code with the phone's camera, or type it into Cloche
 ```
 
-`setup.sh` runs `go install ./cmd/cloche`, links the binary into
-`~/.local/bin`, runs `scripts/launchagent.sh install`, and links
-`~/.claude/skills/cloche` to `skill/`.
+`cloche setup` runs `cloche serve` with launchd on macOS, a systemd user
+service on Linux, or a Task Scheduler task on Windows, and shows where to get
+the Android app. `cloche uninstall` removes the service and the skill.
 
-Cloche updates itself like any other build:
+To build the app yourself: `cd android && ./gradlew assembleRelease`. Cloche
+updates itself like any other build:
 `cloche push android/app/build/outputs/apk/release/app-release.apk`.
 
 Settings in the app lists what a reliable connection needs: notifications,

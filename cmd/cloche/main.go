@@ -27,6 +27,8 @@ usage:
   cloche pair -ios                           pair an iPhone of yours
   cloche pair -friend name                   pair a friend's iPhone, on their Tailscale
   cloche unpair [iphone]                     forget the phone, or an iPhone
+  cloche setup                               check Tailscale, keep cloche serve running, add the agent skill
+  cloche uninstall                           stop cloche serve and remove what setup added
   cloche serve [-listen addr] [-dev]         the computer's half, kept running in the background
 `
 
@@ -39,6 +41,10 @@ func main() {
 	switch cmd, args := os.Args[1], os.Args[2:]; cmd {
 	case "serve":
 		err = serve(args)
+	case "setup":
+		err = setup(args)
+	case "uninstall":
+		err = uninstall(args)
 	case "push":
 		err = push(args)
 	case "pair":
@@ -105,7 +111,7 @@ func dial() local {
 	}}}
 }
 
-var errNotRunning = errors.New("cloche isn't running on this computer: start it with cloche serve")
+var errNotRunning = errors.New("cloche isn't running on this computer: run cloche setup")
 
 func (l local) do(ctx context.Context, method, path string, q url.Values, body, out any) error {
 	var r io.Reader

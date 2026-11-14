@@ -27,6 +27,7 @@ func serve(args []string) error {
 	dev := fs.Bool("dev", false, "listen on loopback with no Tailscale checks, for an emulator through adb reverse")
 	fs.Parse(args)
 
+	background()
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

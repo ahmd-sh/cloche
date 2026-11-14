@@ -86,28 +86,59 @@ func (c *CLI) Self(ctx context.Context) (netip.Addr, Peer, error) {
 	return ip, p, err
 }
 
-func (c *CLI) DNSName(ctx context.Context) (name string, https bool, err error) {
+type Health struct {
+	State   string
+	DNSName string
+	HTTPS   bool
+	Tagged  bool
+}
+
+func (c *CLI) Health(ctx context.Context) (Health, error) {
 	out, err := c.run(ctx, "status", "--json", "--peers=false")
 	if err != nil {
-		return "", false, err
+		return Health{}, err
 	}
 	var st struct {
-		Self        struct{ DNSName string }
+		BackendState string
+		Self         struct {
+			DNSName string
+			Tags    []string
+		}
 		CertDomains []string
 	}
 	if err := json.Unmarshal(out, &st); err != nil {
-		return "", false, fmt.Errorf("tailscale status: %w", err)
+		return Health{}, fmt.Errorf("tailscale status: %w", err)
 	}
-	name = strings.TrimSuffix(st.Self.DNSName, ".")
-	if name == "" {
-		return "", false, errors.New("tailscale status: no DNS name: is MagicDNS on?")
-	}
+	h := Health{State: st.BackendState, DNSName: strings.TrimSuffix(st.Self.DNSName, "."), Tagged: len(st.Self.Tags) > 0}
 	for _, d := range st.CertDomains {
-		if strings.EqualFold(strings.TrimSuffix(d, "."), name) {
-			https = true
+		if h.DNSName != "" && strings.EqualFold(strings.TrimSuffix(d, "."), h.DNSName) {
+			h.HTTPS = true
 		}
 	}
-	return name, https, nil
+	return h, nil
+}
+
+func (c *CLI) DNSName(ctx context.Context) (name string, https bool, err error) {
+	h, err := c.Health(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if h.DNSName == "" {
+		return "", false, errors.New("tailscale status: no DNS name: is MagicDNS on?")
+	}
+	return h.DNSName, h.HTTPS, nil
+}
+
+func (c *CLI) Operator(ctx context.Context) (string, error) {
+	out, err := c.run(ctx, "debug", "prefs")
+	if err != nil {
+		return "", err
+	}
+	var p struct{ OperatorUser string }
+	if err := json.Unmarshal(out, &p); err != nil {
+		return "", fmt.Errorf("tailscale debug prefs: %w", err)
+	}
+	return p.OperatorUser, nil
 }
 
 func (c *CLI) Cert(ctx context.Context, name, certFile, keyFile string) error {
