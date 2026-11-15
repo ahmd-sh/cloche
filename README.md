@@ -26,7 +26,7 @@ cloche push app-debug.apk -to sam # to a friend's phones instead of yours
 cloche status                     # the phones, and what became of recent builds
 ```
 
-`cloche setup` will add a skill that tells Claude Code how to use cloche.
+`cloche setup` adds a skill that tells your agent how to use cloche. It works with Claude Code, Codex, OpenCode and Pi.
 
 ## Set up
 

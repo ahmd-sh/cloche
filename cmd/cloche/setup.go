@@ -117,10 +117,12 @@ func setup(args []string) error {
 	}
 	fmt.Printf("tailscale  on, signed in as %s\n", who)
 	fmt.Printf("service    running, and starts when you log in (%s)\n", svc.how)
-	if where, err := installSkill(); err != nil {
+	where, err := installSkill()
+	for _, w := range where {
+		fmt.Printf("skill      %s\n", w)
+	}
+	if err != nil {
 		notes = append(notes, "The agent skill didn't install: "+err.Error())
-	} else if where != "" {
-		fmt.Printf("skill      %s\n", where)
 	}
 	if note := onPath(bin); note != "" {
 		notes = append(notes, note)
@@ -212,55 +214,77 @@ func onPath(bin string) string {
 	return ""
 }
 
-func skillDir() (string, error) {
+type skillHome struct {
+	dir, agents string
+	used        bool
+}
+
+func skillHomes() ([]skillHome, error) {
 	h, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	claude := filepath.Join(h, ".claude")
-	if st, err := os.Stat(claude); err != nil || !st.IsDir() {
-		return "", nil
+	config := os.Getenv("XDG_CONFIG_HOME")
+	if config == "" {
+		config = filepath.Join(h, ".config")
 	}
-	return filepath.Join(claude, "skills", "cloche"), nil
+	used := func(dirs ...string) bool {
+		for _, d := range dirs {
+			if st, err := os.Stat(d); d != "" && err == nil && st.IsDir() {
+				return true
+			}
+		}
+		return false
+	}
+	return []skillHome{
+		{filepath.Join(h, ".claude", "skills", "cloche"), "Claude Code", used(filepath.Join(h, ".claude"))},
+		{filepath.Join(h, ".agents", "skills", "cloche"), "Codex, OpenCode and Pi", used(
+			filepath.Join(h, ".agents"), filepath.Join(h, ".codex"), os.Getenv("CODEX_HOME"),
+			filepath.Join(h, ".pi"), filepath.Join(config, "opencode"))},
+	}, nil
 }
 
-func installSkill() (string, error) {
-	dir, err := skillDir()
-	if err != nil || dir == "" {
-		return "", err
+func installSkill() ([]string, error) {
+	homes, err := skillHomes()
+	if err != nil {
+		return nil, err
 	}
-	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-		return tilde(dir) + ", a link, left as it is", nil
+	var done []string
+	for _, s := range homes {
+		if !s.used {
+			continue
+		}
+		if fi, err := os.Lstat(s.dir); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			done = append(done, tilde(s.dir)+", a link, left as it is")
+			continue
+		}
+		if err := os.MkdirAll(s.dir, 0o755); err != nil {
+			return done, err
+		}
+		if err := os.WriteFile(filepath.Join(s.dir, "SKILL.md"), skill.File, 0o644); err != nil {
+			return done, err
+		}
+		done = append(done, tilde(s.dir)+", for "+s.agents)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), skill.File, 0o644); err != nil {
-		return "", err
-	}
-	return tilde(dir) + ", for Claude Code", nil
+	return done, nil
 }
 
-func removeSkill() (string, error) {
-	dir, err := skillDir()
-	if err != nil || dir == "" {
-		return "", err
-	}
+func removeSkill(dir string) (bool, error) {
 	fi, err := os.Lstat(dir)
 	if os.IsNotExist(err) {
-		return "", nil
+		return false, nil
 	}
 	if err != nil {
-		return "", err
+		return false, err
 	}
 	if fi.Mode()&os.ModeSymlink != 0 {
-		return tilde(dir), os.Remove(dir)
+		return true, os.Remove(dir)
 	}
 	if err := os.Remove(filepath.Join(dir, "SKILL.md")); err != nil && !os.IsNotExist(err) {
-		return "", err
+		return false, err
 	}
 	os.Remove(dir)
-	return tilde(dir), nil
+	return true, nil
 }
 
 func uninstall(args []string) error {
@@ -271,10 +295,16 @@ func uninstall(args []string) error {
 		return err
 	}
 	fmt.Printf("service    removed from %s: cloche serve is stopped\n", how)
-	if where, err := removeSkill(); err != nil {
-		fmt.Printf("skill      still at %s: %v\n", where, err)
-	} else if where != "" {
-		fmt.Printf("skill      removed from %s\n", where)
+	homes, err := skillHomes()
+	if err != nil {
+		fmt.Printf("skill      not removed: %v\n", err)
+	}
+	for _, s := range homes {
+		if gone, err := removeSkill(s.dir); err != nil {
+			fmt.Printf("skill      still at %s: %v\n", tilde(s.dir), err)
+		} else if gone {
+			fmt.Printf("skill      removed from %s\n", tilde(s.dir))
+		}
 	}
 	fmt.Printf("\nPairings and builds stay in %s. Delete it to forget them.\n", tilde(home()))
 	return nil
