@@ -73,6 +73,12 @@ func installService(bin string, env map[string]string) (service, error) {
 	return s, nil
 }
 
+func stopService() {
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		systemctl("stop", "cloche.service")
+	}
+}
+
 func removeService() (string, error) {
 	unit, err := unitPath()
 	if err != nil {

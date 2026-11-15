@@ -8,6 +8,8 @@ var errNoService = errors.New("cloche setup knows launchd and systemd: start clo
 
 func installService(string, map[string]string) (service, error) { return service{}, errNoService }
 
+func stopService() {}
+
 func removeService() (string, error) { return "", errNoService }
 
 func serviceInstalled() bool { return false }

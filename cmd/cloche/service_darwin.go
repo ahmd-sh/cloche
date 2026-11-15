@@ -42,6 +42,10 @@ func installService(bin string, env map[string]string) (service, error) {
 	return service{}, fmt.Errorf("launchctl bootstrap: %v %s", err, bytes.TrimSpace(out))
 }
 
+func stopService() {
+	exec.Command("launchctl", "bootout", launchdDomain()+"/"+serviceLabel).Run()
+}
+
 func removeService() (string, error) {
 	plist, _, err := launchdPaths()
 	if err != nil {

@@ -70,6 +70,15 @@ func setup(args []string) error {
 		notes = append(notes, "This computer is a tagged node. Tailscale names no owner for it, and only friends' iPhones can pair with it.")
 	}
 
+	stopService()
+	if pid, ok := otherServe(ctx, 5*time.Second); ok {
+		which := "A cloche serve you started yourself is still running"
+		if pid > 0 {
+			which += fmt.Sprintf(" (pid %d)", pid)
+		}
+		return exit{1, which + ". Stop it, then run cloche setup again."}
+	}
+
 	svc, err := installService(bin, serviceEnv())
 	if err != nil {
 		return err
@@ -210,4 +219,20 @@ func uninstall(args []string) error {
 	}
 	fmt.Printf("\nPairings and builds stay in %s. Delete it to forget them.\n", tilde(home()))
 	return nil
+}
+
+func otherServe(ctx context.Context, wait time.Duration) (pid int, running bool) {
+	l := dial()
+	deadline := time.Now().Add(wait)
+	for {
+		var st host.Status
+		err := l.do(ctx, "GET", "/status", nil, nil, &st)
+		if errors.Is(err, errNotRunning) {
+			return 0, false
+		}
+		if time.Now().After(deadline) {
+			return st.PID, true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }

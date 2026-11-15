@@ -496,6 +496,7 @@ type Status struct {
 	Deliveries  []Summary      `json:"deliveries"`
 	Version     string         `json:"version,omitempty"`
 	Update      string         `json:"update,omitempty"`
+	PID         int            `json:"pid,omitempty"`
 }
 
 type PhoneStatus struct {
@@ -509,7 +510,7 @@ type PhoneStatus struct {
 }
 
 func (h *Host) status() Status {
-	s := Status{Host: h.name, Addr: h.addr, Fingerprint: h.Fingerprint(), Deliveries: []Summary{}}
+	s := Status{Host: h.name, Addr: h.addr, Fingerprint: h.Fingerprint(), Deliveries: []Summary{}, PID: os.Getpid()}
 	if p := h.state.Phone; p != nil {
 		s.Phone = &PhoneStatus{Name: p.Name, Device: p.Device, PairedAt: p.PairedAt, Live: h.polls > 0, Seen: h.seen, App: p.App, AppCode: p.AppCode}
 	}
