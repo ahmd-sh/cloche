@@ -3,8 +3,9 @@
 
 :root {
   --paper: #0F3D6E;
-  --grid: rgba(255, 255, 255, .07);
-  --grid-major: rgba(255, 255, 255, .15);
+  --grid: rgba(255, 255, 255, .03);
+  --grid-major: rgba(255, 255, 255, .06);
+  --edge: rgba(255, 255, 255, .15);
   --line: #DCEBFF;
   --text: #F2F7FF;
   --dim: #ADC6E5;
@@ -44,7 +45,7 @@ header {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .mark { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 600; letter-spacing: .18em; }
-.mark img { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--grid-major); }
+.mark img { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--edge); }
 .host { color: var(--faint); font-size: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 h1 { font-size: 22px; line-height: 1.25; font-weight: 600; margin: 4px 0 12px; }

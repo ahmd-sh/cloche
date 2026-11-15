@@ -3,8 +3,9 @@
 
 :root {
   --paper: #0F3D6E;
-  --grid: rgba(255, 255, 255, .07);
-  --grid-major: rgba(255, 255, 255, .15);
+  --grid: rgba(255, 255, 255, .03);
+  --grid-major: rgba(255, 255, 255, .06);
+  --edge: rgba(255, 255, 255, .15);
   --line: #DCEBFF;
   --text: #F2F7FF;
   --dim: #ADC6E5;
@@ -34,7 +35,7 @@ body {
 main, header, footer { max-width: 640px; margin: 0 auto; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0 28px; }
 .mark { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 600; letter-spacing: .18em; }
-.mark img { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--grid-major); }
+.mark img { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--edge); }
 header nav a { color: var(--dim); font-size: 13px; }
 
 a { color: var(--line); }
@@ -59,10 +60,10 @@ h2::after { content: ""; flex: 1; border-top: 1px dashed currentColor; opacity: 
 }
 .label { font-size: 12px; color: var(--dim); margin: 0 0 6px; }
 
-.cmd { display: flex; align-items: stretch; border: 1px solid var(--grid-major); background: rgba(0, 0, 0, .22); margin: 0 0 14px; }
+.cmd { display: flex; align-items: stretch; border: 1px solid var(--edge); background: rgba(0, 0, 0, .22); margin: 0 0 14px; }
 .cmd code { flex: 1; min-width: 0; padding: 10px 12px; overflow-x: auto; white-space: pre; font: inherit; font-size: 13px; }
 .cmd button {
-  flex: none; border: 0; border-left: 1px solid var(--grid-major); background: transparent; color: var(--dim);
+  flex: none; border: 0; border-left: 1px solid var(--edge); background: transparent; color: var(--dim);
   font: inherit; font-size: 12px; padding: 0 12px; cursor: pointer;
 }
 .cmd button:hover { color: var(--text); }
