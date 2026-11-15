@@ -47,6 +47,7 @@ type Delivery struct {
 
 type Inbox struct {
 	Head       int64      `json:"head"`
+	Name       string     `json:"name,omitempty"`
 	Deliveries []Delivery `json:"deliveries"`
 }
 
@@ -57,6 +58,7 @@ type PairRequest struct {
 
 type PairResponse struct {
 	Host   string `json:"host"`
+	Name   string `json:"name,omitempty"`
 	Addr   string `json:"addr"`
 	Key    []byte `json:"key"`
 	Secret string `json:"secret"`

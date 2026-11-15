@@ -20,18 +20,17 @@ import (
 const usage = `cloche puts builds on your phone from anywhere on your tailnet.
 
 usage:
-  cloche push [-m note] [-wait] <file.apk>   deliver a build to the phone
-  cloche push [-to name] <App.ipa | App.app> deliver an iOS build to an iPhone
-  cloche status                              the phones, and recent deliveries
-  cloche pair [-ttl 15m]                     pair a phone (replaces the paired one)
-  cloche pair -ios                           pair an iPhone of yours
-  cloche pair -friend name                   pair a friend's iPhone, on their Tailscale
-  cloche unpair [iphone]                     forget the phone, or an iPhone
-  cloche setup                               check Tailscale, keep cloche serve running, add the agent skill
-  cloche uninstall                           stop cloche serve and remove what setup added
-  cloche update                              install the latest release
-  cloche version                             this cloche's version
-  cloche serve [-listen addr] [-dev]         the computer's half, kept running in the background
+  cloche push [-m note] [-wait] [-to names] <file>  deliver an APK, .ipa or .app to your phones
+                                                    (-to sam,alex: to friends' phones instead)
+  cloche status                                     the phones, and recent deliveries
+  cloche pair -android | -ios [-friend name]        pair a phone of yours, or a friend's on their Tailscale
+  cloche unpair [name]                              forget a phone, or all of a friend's
+  cloche friends                                    friends' phones, and the last build each got
+  cloche setup [-name "display name"]               check Tailscale, keep cloche serve running, add the agent skill
+  cloche uninstall                                  stop cloche serve and remove what setup added
+  cloche update                                     install the latest release
+  cloche version                                    this cloche's version
+  cloche serve [-listen addr] [-dev]                the computer's half, kept running in the background
 `
 
 func main() {
@@ -55,6 +54,8 @@ func main() {
 		err = status(args)
 	case "unpair":
 		err = unpair(args)
+	case "friends":
+		err = friends(args)
 	case "update":
 		err = update(args)
 	case "version", "-version", "--version":

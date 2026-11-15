@@ -80,8 +80,7 @@ type Host struct {
 	records []*record
 	changed chan struct{}
 	pairing *pairing
-	polls   int
-	seen    time.Time
+	polls   map[string]int
 	closed  chan struct{}
 	webErr  string
 	seenAt  map[string]time.Time
@@ -94,13 +93,19 @@ type Host struct {
 
 type state struct {
 	Seq     int64     `json:"seq"`
-	Phone   *phone    `json:"phone,omitempty"`
+	Display string    `json:"display,omitempty"`
+	Phones  []*phone  `json:"phones,omitempty"`
 	IPhones []*iphone `json:"iphones,omitempty"`
+
+	Phone03 *phone `json:"phone,omitempty"`
 }
 
 type phone struct {
 	Node     string    `json:"node"`
 	Name     string    `json:"name"`
+	Machine  string    `json:"machine,omitempty"`
+	Login    string    `json:"login,omitempty"`
+	Friend   string    `json:"friend_name,omitempty"`
 	Device   string    `json:"device"`
 	Secret   string    `json:"secret_sha256"`
 	PairedAt time.Time `json:"paired_at"`
@@ -111,27 +116,81 @@ type phone struct {
 }
 
 type record struct {
-	Delivery wire.Delivery `json:"delivery"`
-	Taken    time.Time     `json:"taken,omitzero"`
-	Fetched  time.Time     `json:"fetched,omitzero"`
-	Result   *wire.Result  `json:"result,omitempty"`
-	ResultAt time.Time     `json:"result_at,omitzero"`
+	Delivery wire.Delivery        `json:"delivery"`
+	IPA      *ipa.Info            `json:"ipa,omitempty"`
+	For      []string             `json:"for,omitempty"`
+	Phones   []string             `json:"phones,omitempty"`
+	Got      map[string]*progress `json:"got,omitempty"`
 
-	To        string    `json:"to,omitempty"`
-	IPA       *ipa.Info `json:"ipa,omitempty"`
-	NotifyErr string    `json:"notify_error,omitempty"`
-	Opened    time.Time `json:"opened,omitzero"`
-	Asked     time.Time `json:"asked,omitzero"`
-	Cleared   bool      `json:"cleared,omitempty"`
-
-	m wire.Manifest
+	m   wire.Manifest
+	rev int64
 }
 
+type progress struct {
+	Taken     time.Time    `json:"taken,omitzero"`
+	Fetched   time.Time    `json:"fetched,omitzero"`
+	Result    *wire.Result `json:"result,omitempty"`
+	ResultAt  time.Time    `json:"result_at,omitzero"`
+	NotifyErr string       `json:"notify_error,omitempty"`
+	Opened    time.Time    `json:"opened,omitzero"`
+	Asked     time.Time    `json:"asked,omitzero"`
+	Cleared   bool         `json:"cleared,omitempty"`
+}
+
+type record03 struct {
+	To string `json:"to"`
+	progress
+}
+
+func (r *record) ios() bool { return r.IPA != nil }
+
 func (r *record) ext() string {
-	if r.To != "" {
+	if r.ios() {
 		return ".ipa"
 	}
 	return ".apk"
+}
+
+func (r *record) of(node string) progress {
+	if p := r.Got[node]; p != nil {
+		return *p
+	}
+	return progress{}
+}
+
+func (r *record) at(node string) *progress {
+	if r.Got == nil {
+		r.Got = map[string]*progress{}
+	}
+	p := r.Got[node]
+	if p == nil {
+		p = &progress{}
+		r.Got[node] = p
+	}
+	return p
+}
+
+func (r *record) forPhone(p *phone) bool {
+	if r.ios() {
+		return false
+	}
+	if len(r.For) == 0 && len(r.Phones) == 0 {
+		return p.Friend == ""
+	}
+	return p.Friend != "" && slices.Contains(r.For, p.Friend) || slices.Contains(r.Phones, p.Node)
+}
+
+func (r *record) forIPhone(ip *iphone) bool {
+	return r.ios() && slices.Contains(r.Phones, ip.Node)
+}
+
+func (r *record) final() bool {
+	for _, p := range r.Got {
+		if p.Result != nil && p.Result.Final() {
+			return true
+		}
+	}
+	return false
 }
 
 type pairing struct {
@@ -172,7 +231,7 @@ func Open(c Config) (*Host, error) {
 		peers: c.Peers, owner: c.Owner, anyOwner: c.AnyOwner, dnsName: strings.TrimSuffix(c.DNSName, "."), log: c.Log, now: c.Now,
 		web: strings.TrimSuffix(c.Web, "/"), signProfile: c.SignProfile,
 		changed: make(chan struct{}), closed: make(chan struct{}),
-		seenAt: map[string]time.Time{}, served: map[string]int64{},
+		polls: map[string]int{}, seenAt: map[string]time.Time{}, served: map[string]int64{},
 		version: c.Version,
 	}
 	h.pusher = &webpush.Sender{Key: pushKey, Subject: h.web, HTTP: c.PushHTTP}
@@ -186,10 +245,31 @@ func Open(c Config) (*Host, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	h.upgrade()
 	if err := h.loadRecords(); err != nil {
 		return nil, err
 	}
 	return h, nil
+}
+
+func (h *Host) upgrade() {
+	if p := h.state.Phone03; p != nil {
+		h.state.Phone03 = nil
+		if h.phone(p.Node) == nil {
+			h.state.Phones = append([]*phone{p}, h.state.Phones...)
+		}
+	}
+	for _, p := range h.state.Phones {
+		if p.Machine == "" {
+			p.Machine = p.Name
+			p.Name = h.uniqueName(p, nameFrom(p.Name, "phone"))
+		}
+	}
+	for _, ip := range h.state.IPhones {
+		if ip.Friend && ip.FriendName == "" {
+			ip.FriendName = ip.Name
+		}
+	}
 }
 
 func (h *Host) Close() {
@@ -218,7 +298,7 @@ type PushRequest struct {
 	Path   string       `json:"path"`
 	Note   string       `json:"note,omitempty"`
 	Source *wire.Source `json:"source,omitempty"`
-	To     string       `json:"to,omitempty"`
+	To     []string     `json:"to,omitempty"`
 }
 
 func (h *Host) Push(ctx context.Context, req PushRequest) (Summary, error) {
@@ -229,8 +309,21 @@ func (h *Host) Push(ctx context.Context, req PushRequest) (Summary, error) {
 	case st.IsDir() && strings.HasSuffix(filepath.Clean(req.Path), ".app"),
 		st.Mode().IsRegular() && (strings.HasSuffix(req.Path, ".ipa") || ipa.IsIPA(req.Path)):
 		return h.pushIPA(req, st.IsDir())
-	case req.To != "":
-		return Summary{}, errors.New("-to is for iPhones: this isn't an .ipa")
+	}
+	h.mu.Lock()
+	aud, err := h.audience(req.To, false)
+	h.mu.Unlock()
+	if err != nil {
+		return Summary{}, err
+	}
+	return h.pushAPK(ctx, req, aud)
+}
+
+func (h *Host) pushAPK(ctx context.Context, req PushRequest, aud audience) (Summary, error) {
+	st, err := os.Stat(req.Path)
+	switch {
+	case err != nil:
+		return Summary{}, err
 	case !st.Mode().IsRegular():
 		return Summary{}, fmt.Errorf("%s isn't a file", req.Path)
 	case st.Size() > MaxSize:
@@ -262,7 +355,7 @@ func (h *Host) Push(ctx context.Context, req PushRequest) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	r := &record{Delivery: wire.Delivery{Manifest: b, Sig: sig}, m: m}
+	r := &record{Delivery: wire.Delivery{Manifest: b, Sig: sig}, m: m, For: aud.For, Phones: aud.Phones}
 	if err := h.saveRecord(r); err != nil {
 		return Summary{}, err
 	}
@@ -320,7 +413,7 @@ func (h *Host) sign(b []byte) ([]byte, error) {
 func (h *Host) prune() {
 	var phone, iphones int
 	for _, r := range h.records {
-		if r.To != "" {
+		if r.ios() {
 			iphones++
 		} else {
 			phone++
@@ -328,7 +421,7 @@ func (h *Host) prune() {
 	}
 	h.records = slices.DeleteFunc(h.records, func(r *record) bool {
 		n := &phone
-		if r.To != "" {
+		if r.ios() {
 			n = &iphones
 		}
 		if *n <= Keep {
@@ -338,7 +431,9 @@ func (h *Host) prune() {
 		os.Remove(h.path("deliveries", r.m.ID+r.ext()))
 		os.Remove(h.path("deliveries", r.m.ID+".png"))
 		os.Remove(h.path("deliveries", r.m.ID+".json"))
-		delete(h.served, r.m.ID)
+		for node := range r.Got {
+			delete(h.served, r.m.ID+"/"+node)
+		}
 		return true
 	})
 }
@@ -355,6 +450,13 @@ func (h *Host) find(id string) *record {
 func (h *Host) broadcast() {
 	close(h.changed)
 	h.changed = make(chan struct{})
+}
+
+func (h *Host) touch(r *record) error {
+	r.rev++
+	err := h.saveRecord(r)
+	h.broadcast()
+	return err
 }
 
 func (h *Host) wait(ctx context.Context, done func() bool) bool {
@@ -376,8 +478,8 @@ func (h *Host) wait(ctx context.Context, done func() bool) bool {
 	}
 }
 
-func (h *Host) StartPairing(ttl time.Duration) (PairStart, error) {
-	return h.startPairing(ttl, false, "")
+func (h *Host) StartPairing(ttl time.Duration, friend string) (PairStart, error) {
+	return h.startPairing(ttl, false, friend)
 }
 
 func (h *Host) StartPairingIPhone(ttl time.Duration, friend string) (PairStart, error) {
@@ -394,7 +496,7 @@ func (h *Host) startPairing(ttl time.Duration, ios bool, friend string) (PairSta
 		return PairStart{}, errors.New("the web app for iPhones isn't up: " + h.webErr)
 	}
 	if friend != "" {
-		if err := checkName(friend); err != nil {
+		if err := h.checkFriendName(friend); err != nil {
 			return PairStart{}, err
 		}
 	} else if !h.anyOwner && h.owner == "" {
@@ -404,9 +506,16 @@ func (h *Host) startPairing(ttl time.Duration, ios bool, friend string) (PairSta
 	h.pairing = &pairing{code: code, expires: h.now().Add(ttl), ios: ios, friend: friend}
 	h.broadcast()
 	d := sha256.Sum256(h.spki)
+	q := url.Values{"h": {h.name}, "a": {h.addr}, "c": {code}, "f": {base64.RawURLEncoding.EncodeToString(d[:])}}
+	if h.state.Display != "" {
+		q.Set("n", h.state.Display)
+	}
+	if friend != "" {
+		q.Set("friend", "1")
+	}
 	p := PairStart{
-		Host: h.name, Addr: h.addr, Code: code, Fingerprint: h.Fingerprint(), Expires: h.pairing.expires,
-		URL: PairPage + "#" + url.Values{"h": {h.name}, "a": {h.addr}, "c": {code}, "f": {base64.RawURLEncoding.EncodeToString(d[:])}}.Encode(),
+		Host: h.name, Display: h.state.Display, Addr: h.addr, Code: code, Fingerprint: h.Fingerprint(), Expires: h.pairing.expires,
+		URL: PairPage + "#" + q.Encode(),
 		IOS: ios, Friend: friend,
 	}
 	if ios {
@@ -419,6 +528,7 @@ const PairPage = "https://ahmd-sh.github.io/cloche/pair/"
 
 type PairStart struct {
 	Host        string    `json:"host"`
+	Display     string    `json:"display,omitempty"`
 	Addr        string    `json:"addr"`
 	Code        string    `json:"code"`
 	URL         string    `json:"url"`
@@ -426,15 +536,6 @@ type PairStart struct {
 	Expires     time.Time `json:"expires"`
 	IOS         bool      `json:"ios,omitempty"`
 	Friend      string    `json:"friend,omitempty"`
-}
-
-func (h *Host) Unpair() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.state.Phone = nil
-	h.epoch++
-	h.broadcast()
-	return h.saveState()
 }
 
 func (h *Host) headForNewPhone() int64 {
@@ -450,34 +551,57 @@ func (h *Host) headForNewPhone() int64 {
 type Summary struct {
 	ID       string       `json:"id"`
 	Seq      int64        `json:"seq"`
+	Rev      int64        `json:"rev"`
 	PushedAt time.Time    `json:"pushed_at"`
 	File     wire.File    `json:"file"`
 	APK      *wire.APK    `json:"apk,omitempty"`
+	IPA      *ipa.Info    `json:"ipa,omitempty"`
 	Note     string       `json:"note,omitempty"`
 	Source   *wire.Source `json:"source,omitempty"`
-	Taken    time.Time    `json:"taken,omitzero"`
-	Fetched  time.Time    `json:"fetched,omitzero"`
-	Result   *wire.Result `json:"result,omitempty"`
-	ResultAt time.Time    `json:"result_at,omitzero"`
+	For      []string     `json:"for,omitempty"`
+	Phones   []Progress   `json:"phones"`
+	Warnings []string     `json:"warnings,omitempty"`
+}
 
-	IPA       *ipa.Info `json:"ipa,omitempty"`
-	To        string    `json:"to,omitempty"`
-	NotifyErr string    `json:"notify_error,omitempty"`
-	Opened    time.Time `json:"opened,omitzero"`
-	Asked     time.Time `json:"asked,omitzero"`
-	Warnings  []string  `json:"warnings,omitempty"`
+type Progress struct {
+	Phone     string       `json:"phone"`
+	IOS       bool         `json:"ios,omitempty"`
+	Friend    string       `json:"friend,omitempty"`
+	Live      bool         `json:"live,omitempty"`
+	Seen      time.Time    `json:"seen,omitzero"`
+	Taken     time.Time    `json:"taken,omitzero"`
+	Fetched   time.Time    `json:"fetched,omitzero"`
+	Result    *wire.Result `json:"result,omitempty"`
+	ResultAt  time.Time    `json:"result_at,omitzero"`
+	NotifyErr string       `json:"notify_error,omitempty"`
+	Opened    time.Time    `json:"opened,omitzero"`
+	Asked     time.Time    `json:"asked,omitzero"`
 }
 
 func (h *Host) summary(r *record) Summary {
 	s := Summary{
-		ID: r.m.ID, Seq: r.m.Seq, PushedAt: r.m.PushedAt, File: r.m.File, APK: r.m.APK, Note: r.m.Note, Source: r.m.Source,
-		Taken: r.Taken, Fetched: r.Fetched, Result: r.Result, ResultAt: r.ResultAt,
-		IPA: r.IPA, NotifyErr: r.NotifyErr, Opened: r.Opened, Asked: r.Asked,
+		ID: r.m.ID, Seq: r.m.Seq, Rev: r.rev, PushedAt: r.m.PushedAt, File: r.m.File, APK: r.m.APK, IPA: r.IPA,
+		Note: r.m.Note, Source: r.m.Source, For: r.For, Phones: []Progress{},
 	}
-	if r.To != "" {
-		s.To = r.To
-		if ip := h.iphone(r.To); ip != nil {
-			s.To = ip.Name
+	add := func(node, name, friend string, ios, live bool) {
+		g := r.of(node)
+		s.Phones = append(s.Phones, Progress{
+			Phone: name, IOS: ios, Friend: friend, Live: live, Seen: h.seenAt[node],
+			Taken: g.Taken, Fetched: g.Fetched, Result: g.Result, ResultAt: g.ResultAt,
+			NotifyErr: g.NotifyErr, Opened: g.Opened, Asked: g.Asked,
+		})
+	}
+	if r.ios() {
+		for _, node := range r.Phones {
+			if ip := h.iphone(node); ip != nil {
+				add(node, ip.Name, ip.FriendName, true, false)
+			}
+		}
+		return s
+	}
+	for _, p := range h.state.Phones {
+		if r.forPhone(p) {
+			add(p.Node, p.Name, p.Friend, false, h.polls[p.Node] > 0)
 		}
 	}
 	return s
@@ -485,10 +609,12 @@ func (h *Host) summary(r *record) Summary {
 
 type Status struct {
 	Host        string         `json:"host"`
+	Display     string         `json:"display,omitempty"`
 	Addr        string         `json:"addr"`
 	Fingerprint string         `json:"fingerprint"`
-	Phone       *PhoneStatus   `json:"phone,omitempty"`
+	Phones      []PhoneStatus  `json:"phones,omitempty"`
 	IPhones     []IPhoneStatus `json:"iphones,omitempty"`
+	Friends     []FriendStatus `json:"friends,omitempty"`
 	Web         string         `json:"web,omitempty"`
 	WebErr      string         `json:"web_error,omitempty"`
 	Pairing     time.Time      `json:"pairing,omitzero"`
@@ -501,6 +627,9 @@ type Status struct {
 
 type PhoneStatus struct {
 	Name     string    `json:"name"`
+	Machine  string    `json:"machine"`
+	Login    string    `json:"login,omitempty"`
+	Friend   string    `json:"friend,omitempty"`
 	Device   string    `json:"device"`
 	PairedAt time.Time `json:"paired_at"`
 	Live     bool      `json:"live"`
@@ -509,10 +638,17 @@ type PhoneStatus struct {
 	AppCode  int64     `json:"app_code,omitempty"`
 }
 
+func (h *Host) phoneStatus(p *phone) PhoneStatus {
+	return PhoneStatus{
+		Name: p.Name, Machine: p.Machine, Login: p.Login, Friend: p.Friend, Device: p.Device, PairedAt: p.PairedAt,
+		Live: h.polls[p.Node] > 0, Seen: h.seenAt[p.Node], App: p.App, AppCode: p.AppCode,
+	}
+}
+
 func (h *Host) status() Status {
-	s := Status{Host: h.name, Addr: h.addr, Fingerprint: h.Fingerprint(), Deliveries: []Summary{}, PID: os.Getpid()}
-	if p := h.state.Phone; p != nil {
-		s.Phone = &PhoneStatus{Name: p.Name, Device: p.Device, PairedAt: p.PairedAt, Live: h.polls > 0, Seen: h.seen, App: p.App, AppCode: p.AppCode}
+	s := Status{Host: h.name, Display: h.state.Display, Addr: h.addr, Fingerprint: h.Fingerprint(), Deliveries: []Summary{}, PID: os.Getpid()}
+	for _, p := range h.state.Phones {
+		s.Phones = append(s.Phones, h.phoneStatus(p))
 	}
 	if h.pairing != nil && h.now().Before(h.pairing.expires) {
 		s.Pairing = h.pairing.expires
@@ -522,6 +658,7 @@ func (h *Host) status() Status {
 	for _, ip := range h.state.IPhones {
 		s.IPhones = append(s.IPhones, h.iphoneStatus(ip))
 	}
+	s.Friends = h.friends()
 	for i := len(h.records) - 1; i >= 0 && len(s.Deliveries) < 10; i-- {
 		s.Deliveries = append(s.Deliveries, h.summary(h.records[i]))
 	}
@@ -555,6 +692,17 @@ func (h *Host) loadRecords() error {
 			h.log.Printf("skipping %s: %v", name, err)
 			continue
 		}
+		if r.Got == nil {
+			var old record03
+			json.Unmarshal(b, &old)
+			if node := h.owner03(r, old.To); node != "" && old.progress != (progress{}) {
+				g := old.progress
+				r.Got = map[string]*progress{node: &g}
+			}
+			if r.ios() && old.To != "" && len(r.Phones) == 0 {
+				r.Phones = []string{old.To}
+			}
+		}
 		h.records = append(h.records, r)
 	}
 	slices.SortFunc(h.records, func(a, b *record) int { return int(a.m.Seq - b.m.Seq) })
@@ -567,6 +715,18 @@ func (h *Host) saveRecord(r *record) error {
 		return err
 	}
 	return writeFile(h.path("deliveries", r.m.ID+".json"), b)
+}
+
+func (h *Host) owner03(r *record, to string) string {
+	if r.ios() {
+		return to
+	}
+	for _, p := range h.state.Phones {
+		if p.Friend == "" {
+			return p.Node
+		}
+	}
+	return ""
 }
 
 func (h *Host) saveState() error {
@@ -716,7 +876,7 @@ func cleanIPA(i *ipa.Info) {
 	}
 }
 
-var errNoOwner = errors.New("Tailscale doesn't say whose this computer is (a tagged node has no owner), so only a friend's iPhone can pair: cloche pair -friend name")
+var errNoOwner = errors.New("Tailscale doesn't say whose this computer is (a tagged node has no owner), so only friends' phones can pair: cloche pair -android -friend name, or cloche pair -ios -friend name")
 
 func (h *Host) ownedBy(p tailnet.Peer) bool {
 	if h.anyOwner {
@@ -766,27 +926,37 @@ func (h *Host) SetUpdate(v string) {
 	h.update = v
 }
 
-type PhoneApp struct {
-	Code    int64
-	Offered string
-}
-
-func (h *Host) PhoneApp() (PhoneApp, bool) {
+func (h *Host) Behind(code int64, version string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	p := h.state.Phone
-	if p == nil {
-		return PhoneApp{}, false
+	var nodes []string
+	for _, p := range h.state.Phones {
+		if p.AppCode != 0 && p.AppCode < code && p.AppOffered != version {
+			nodes = append(nodes, p.Node)
+		}
 	}
-	return PhoneApp{Code: p.AppCode, Offered: p.AppOffered}, true
+	return nodes
 }
 
-func (h *Host) SetAppOffered(v string) error {
+func (h *Host) OfferApp(ctx context.Context, path, version string, nodes []string) error {
+	if _, err := h.pushAPK(ctx, PushRequest{Path: path, Note: "Cloche " + version}, audience{Phones: nodes}); err != nil {
+		return err
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.state.Phone == nil {
-		return nil
+	for _, node := range nodes {
+		if p := h.phone(node); p != nil {
+			p.AppOffered = version
+		}
 	}
-	h.state.Phone.AppOffered = v
+	return h.saveState()
+}
+
+func (h *Host) SetDisplay(name string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.state.Display = clean(name, 40)
+	h.epoch++
+	h.broadcast()
 	return h.saveState()
 }

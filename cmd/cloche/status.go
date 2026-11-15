@@ -28,20 +28,19 @@ func status(args []string) error {
 	}
 
 	fmt.Printf("cloche on %s (%s) · key %s\n", st.Host, st.Addr, st.Fingerprint)
-	switch p := st.Phone; {
-	case p == nil:
-		fmt.Println("phone   none paired: run cloche pair")
-	case p.Live:
-		fmt.Printf("phone   %s · connected%s\n", p.Name, app(p))
-	case !p.Seen.IsZero():
-		fmt.Printf("phone   %s · offline, last seen %s%s\n", p.Name, ago(p.Seen), app(p))
-	default:
-		fmt.Printf("phone   %s · hasn't connected since pairing\n", p.Name)
+	if st.Display != "" {
+		fmt.Printf("name    %s\n", st.Display)
+	}
+	if len(st.Phones) == 0 && len(st.IPhones) == 0 {
+		fmt.Println("phone   none paired: run cloche pair -android, or cloche pair -ios")
+	}
+	for _, p := range st.Phones {
+		fmt.Printf("phone   %s · %s\n", p.Name, strings.Join(phoneBits(p), " · "))
 	}
 	for _, ip := range st.IPhones {
 		var bits []string
-		if ip.Friend {
-			bits = append(bits, "friend's, on "+ip.Login)
+		if ip.Friend != "" {
+			bits = append(bits, ip.Friend+"'s, on "+ip.Login)
 		}
 		if ip.UDID != "" {
 			bits = append(bits, "UDID "+ip.UDID)
@@ -73,75 +72,171 @@ func status(args []string) error {
 	}
 	fmt.Println()
 	for _, d := range st.Deliveries {
-		state := "waiting for the phone"
-		switch {
-		case d.IPA != nil:
-			state = iphoneState(d)
-		case d.Result != nil:
-			state = d.Result.Status
-			if d.Result.Detail != "" {
-				state += ": " + d.Result.Detail
-			}
-		case !d.Fetched.IsZero():
-			state = "downloading"
-		case !d.Taken.IsZero():
-			state = "on its way"
-		}
-		line := fmt.Sprintf("#%-3d %-10s %s · %s · %s", d.Seq, ago(d.PushedAt), what(d), mb(d.File.Size), state)
-		fmt.Println(line)
-		var more []string
-		if d.Source != nil && d.Source.Commit != "" {
-			more = append(more, from(d.Source))
-		}
-		if d.Note != "" {
-			more = append(more, fmt.Sprintf("%q", d.Note))
-		}
-		if len(more) > 0 {
-			fmt.Printf("     %s\n", strings.Join(more, " · "))
-		}
+		printDelivery(d)
 	}
 	return nil
 }
 
-func app(p *host.PhoneStatus) string {
-	if p.App == "" {
-		return ""
+func phoneBits(p host.PhoneStatus) []string {
+	var bits []string
+	if p.Friend != "" {
+		who := p.Friend + "'s"
+		if p.Login != "" {
+			who += ", on " + p.Login
+		}
+		bits = append(bits, who)
 	}
-	return " · Cloche " + p.App
+	switch {
+	case p.Live:
+		bits = append(bits, "connected")
+	case !p.Seen.IsZero():
+		bits = append(bits, "offline, last seen "+ago(p.Seen))
+	default:
+		bits = append(bits, "not connected since cloche started")
+	}
+	if p.App != "" {
+		bits = append(bits, "Cloche "+p.App)
+	}
+	return bits
 }
 
-func iphoneState(d host.Summary) string {
-	switch {
-	case d.Result != nil && d.Result.Status == wire.Downloaded:
-		return "downloaded by " + d.To
-	case d.Result != nil && d.Result.Status == wire.Installing:
-		return "downloading to " + d.To
-	case d.Result != nil && d.Result.Status == wire.Asked:
-		return "Install tapped on " + d.To
-	case !d.Opened.IsZero():
-		return "looked at on " + d.To
-	case d.NotifyErr != "":
-		return "for " + d.To + ", not notified: " + d.NotifyErr
-	case !d.Taken.IsZero():
-		return d.To + " notified"
+func printDelivery(d host.Summary) {
+	line := fmt.Sprintf("#%-3d %-10s %s · %s · %s", d.Seq, ago(d.PushedAt), what(d), mb(d.File.Size), deliveryState(d))
+	fmt.Println(line)
+	var more []string
+	if d.Source != nil && d.Source.Commit != "" {
+		more = append(more, from(d.Source))
 	}
-	return "for " + d.To
+	if d.Note != "" {
+		more = append(more, fmt.Sprintf("%q", d.Note))
+	}
+	if len(more) > 0 {
+		fmt.Printf("     %s\n", strings.Join(more, " · "))
+	}
+}
+
+func deliveryState(d host.Summary) string {
+	if len(d.Phones) == 0 {
+		if d.IPA != nil {
+			return "its iPhones were unpaired"
+		}
+		if len(d.For) > 0 {
+			return "for " + strings.Join(d.For, ", ") + ", whose phones were unpaired"
+		}
+		return "waiting for a phone"
+	}
+	var parts []string
+	for _, p := range d.Phones {
+		if d.IPA != nil {
+			parts = append(parts, iphoneState(p))
+			continue
+		}
+		st := androidState(p)
+		if len(d.Phones) > 1 || p.Friend != "" {
+			st = p.Phone + " " + st
+		}
+		parts = append(parts, st)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func androidState(p host.Progress) string {
+	switch {
+	case p.Result != nil && p.Result.Detail != "":
+		return p.Result.Status + ": " + p.Result.Detail
+	case p.Result != nil:
+		return p.Result.Status
+	case !p.Fetched.IsZero():
+		return "downloading"
+	case !p.Taken.IsZero():
+		return "on its way"
+	}
+	return "waiting for the phone"
+}
+
+func iphoneState(p host.Progress) string {
+	switch {
+	case p.Result != nil && p.Result.Status == wire.Downloaded:
+		return "downloaded by " + p.Phone
+	case p.Result != nil && p.Result.Status == wire.Installing:
+		return "downloading to " + p.Phone
+	case p.Result != nil && p.Result.Status == wire.Asked:
+		return "Install tapped on " + p.Phone
+	case !p.Opened.IsZero():
+		return "looked at on " + p.Phone
+	case p.NotifyErr != "":
+		return "for " + p.Phone + ", not notified: " + p.NotifyErr
+	case !p.Taken.IsZero():
+		return p.Phone + " notified"
+	}
+	return "for " + p.Phone
 }
 
 func unpair(args []string) error {
-	if len(args) > 1 {
-		return exit{2, "usage: cloche unpair [iphone]"}
+	if len(args) > 1 || len(args) == 1 && strings.HasPrefix(args[0], "-") {
+		return exit{2, "usage: cloche unpair [name]: a phone, or a friend to forget all their phones"}
 	}
+	q := url.Values{}
 	if len(args) == 1 {
-		if err := dial().do(context.Background(), "POST", "/unpair", url.Values{"iphone": {args[0]}}, nil, nil); err != nil {
-			return err
-		}
-		fmt.Printf("unpaired %s: it can't reach this computer's web app until it pairs again\n", args[0])
-		return nil
+		q.Set("name", args[0])
 	}
-	if err := dial().do(context.Background(), "POST", "/unpair", nil, nil, nil); err != nil {
+	var res struct {
+		Unpaired []string `json:"unpaired"`
+	}
+	if err := dial().do(context.Background(), "POST", "/unpair", q, nil, &res); err != nil {
 		return err
 	}
-	fmt.Println("unpaired: the phone can't reach this computer until it pairs again")
+	if len(res.Unpaired) == 1 {
+		fmt.Printf("unpaired %s: it can't reach this computer until it pairs again\n", res.Unpaired[0])
+	} else {
+		fmt.Printf("unpaired %s: they can't reach this computer until they pair again\n", strings.Join(res.Unpaired, ", "))
+	}
+	return nil
+}
+
+func friends(args []string) error {
+	fs := flag.NewFlagSet("friends", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "print as JSON")
+	fs.Parse(args)
+	var st host.Status
+	if err := dial().do(context.Background(), "GET", "/status", nil, nil, &st); err != nil {
+		return err
+	}
+	if *asJSON {
+		e := json.NewEncoder(os.Stdout)
+		e.SetIndent("", "  ")
+		if st.Friends == nil {
+			st.Friends = []host.FriendStatus{}
+		}
+		return e.Encode(st.Friends)
+	}
+	if len(st.Friends) == 0 {
+		fmt.Println("no friends' phones are paired: cloche pair -android -friend <name>, or cloche pair -ios -friend <name>")
+		return nil
+	}
+	for i, f := range st.Friends {
+		if i > 0 {
+			fmt.Println()
+		}
+		fmt.Println(f.Name)
+		for _, p := range f.Phones {
+			k, seen := "Android", "not seen since cloche started"
+			if p.IOS {
+				k = "iPhone"
+			}
+			switch {
+			case p.Live:
+				seen = "connected"
+			case !p.Seen.IsZero():
+				seen = "seen " + ago(p.Seen)
+			}
+			fmt.Printf("  %-12s %s · %s\n", p.Name, k, seen)
+		}
+		if f.Last != nil {
+			fmt.Printf("  last build   #%d %s · %s · %s\n", f.Last.Seq, what(*f.Last), ago(f.Last.PushedAt), deliveryState(*f.Last))
+		} else {
+			fmt.Println("  no builds sent yet")
+		}
+	}
 	return nil
 }

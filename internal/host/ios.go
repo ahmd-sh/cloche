@@ -18,24 +18,25 @@ import (
 )
 
 type iphone struct {
-	Node     string                `json:"node"`
-	Name     string                `json:"name"`
-	Machine  string                `json:"machine"`
-	Login    string                `json:"login"`
-	Friend   bool                  `json:"friend,omitempty"`
-	Token    string                `json:"token"`
-	UDID     string                `json:"udid,omitempty"`
-	Model    string                `json:"model,omitempty"`
-	OS       string                `json:"os,omitempty"`
-	Push     *webpush.Subscription `json:"push,omitempty"`
-	PairedAt time.Time             `json:"paired_at"`
+	Node       string                `json:"node"`
+	Name       string                `json:"name"`
+	Machine    string                `json:"machine"`
+	Login      string                `json:"login"`
+	Friend     bool                  `json:"friend,omitempty"`
+	FriendName string                `json:"friend_name,omitempty"`
+	Token      string                `json:"token"`
+	UDID       string                `json:"udid,omitempty"`
+	Model      string                `json:"model,omitempty"`
+	OS         string                `json:"os,omitempty"`
+	Push       *webpush.Subscription `json:"push,omitempty"`
+	PairedAt   time.Time             `json:"paired_at"`
 }
 
 type IPhoneStatus struct {
 	Name     string    `json:"name"`
 	Machine  string    `json:"machine"`
 	Login    string    `json:"login"`
-	Friend   bool      `json:"friend,omitempty"`
+	Friend   string    `json:"friend,omitempty"`
 	UDID     string    `json:"udid,omitempty"`
 	Model    string    `json:"model,omitempty"`
 	OS       string    `json:"os,omitempty"`
@@ -46,7 +47,7 @@ type IPhoneStatus struct {
 
 func (h *Host) iphoneStatus(ip *iphone) IPhoneStatus {
 	return IPhoneStatus{
-		Name: ip.Name, Machine: ip.Machine, Login: ip.Login, Friend: ip.Friend, UDID: ip.UDID, Model: ip.Model, OS: ip.OS,
+		Name: ip.Name, Machine: ip.Machine, Login: ip.Login, Friend: ip.FriendName, UDID: ip.UDID, Model: ip.Model, OS: ip.OS,
 		Notify: ip.Push != nil, PairedAt: ip.PairedAt, Seen: h.seenAt[ip.Node],
 	}
 }
@@ -58,24 +59,6 @@ func (h *Host) iphone(node string) *iphone {
 		}
 	}
 	return nil
-}
-
-func (h *Host) iphoneNamed(name string) *iphone {
-	for _, ip := range h.state.IPhones {
-		if strings.EqualFold(ip.Name, name) {
-			return ip
-		}
-	}
-	var found *iphone
-	for _, ip := range h.state.IPhones {
-		if strings.EqualFold(ip.Machine, name) {
-			if found != nil || ip.Friend {
-				return nil
-			}
-			found = ip
-		}
-	}
-	return found
 }
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
@@ -93,16 +76,6 @@ func (h *Host) SetWebErr(msg string) {
 	h.webErr = msg
 }
 
-func (h *Host) UnpairIPhone(name string) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	ip := h.iphoneNamed(name)
-	if ip == nil {
-		return fmt.Errorf("no iPhone called %s is paired", name)
-	}
-	return h.forgetIPhone(ip)
-}
-
 func (h *Host) forgetIPhone(ip *iphone) error {
 	h.state.IPhones = slices.DeleteFunc(h.state.IPhones, func(x *iphone) bool { return x == ip })
 	h.epoch++
@@ -111,39 +84,8 @@ func (h *Host) forgetIPhone(ip *iphone) error {
 	return h.saveState()
 }
 
-func (h *Host) target(name string) (*iphone, error) {
-	if name != "" {
-		if ip := h.iphoneNamed(name); ip != nil {
-			return ip, nil
-		}
-		return nil, fmt.Errorf("no iPhone called %s is paired%s", name, h.iphoneNames())
-	}
-	var mine []*iphone
-	for _, ip := range h.state.IPhones {
-		if !ip.Friend {
-			mine = append(mine, ip)
-		}
-	}
-	switch {
-	case len(mine) == 1:
-		return mine[0], nil
-	case len(mine) > 1:
-		return nil, fmt.Errorf("more than one iPhone of yours is paired: say which with -to%s", h.iphoneNames())
-	case len(h.state.IPhones) > 0:
-		return nil, fmt.Errorf("no iPhone of yours is paired: to send it to a friend's, name it with -to%s", h.iphoneNames())
-	}
-	return nil, errors.New("no iPhone is paired: run cloche pair -ios")
-}
-
-func (h *Host) iphoneNames() string {
-	if len(h.state.IPhones) == 0 {
-		return ""
-	}
-	var names []string
-	for _, ip := range h.state.IPhones {
-		names = append(names, ip.Name)
-	}
-	return " (paired: " + strings.Join(names, ", ") + ")"
+type target struct {
+	node, name, udid string
 }
 
 func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
@@ -156,12 +98,14 @@ func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
 		h.mu.Unlock()
 		return Summary{}, errors.New("the web app for iPhones isn't up: " + h.webErr)
 	}
-	ip, err := h.target(req.To)
-	var (
-		node, name, udid string
-	)
-	if ip != nil {
-		node, name, udid = ip.Node, ip.Name, ip.UDID
+	var targets []target
+	aud, err := h.audience(req.To, true)
+	if err == nil {
+		var ips []*iphone
+		ips, err = h.iphonesFor(aud)
+		for _, ip := range ips {
+			targets = append(targets, target{ip.Node, ip.Name, ip.UDID})
+		}
 	}
 	h.mu.Unlock()
 	if err != nil {
@@ -193,9 +137,26 @@ func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
 		return Summary{}, err
 	}
 	cleanIPA(info)
-	warnings, err := check(info, name, udid, h.now())
+	warnings, err := checkBuild(info, h.now())
 	if err != nil {
 		return Summary{}, err
+	}
+	var to []target
+	var refused []error
+	for _, t := range targets {
+		w, err := checkDevice(info, t.name, t.udid)
+		if err != nil {
+			refused = append(refused, err)
+			continue
+		}
+		warnings = append(warnings, w...)
+		to = append(to, t)
+	}
+	if len(to) == 0 {
+		return Summary{}, errors.Join(refused...)
+	}
+	for _, err := range refused {
+		warnings = append(warnings, "not sent: "+err.Error())
 	}
 	if len(info.Icon) > 0 {
 		writeFile(h.path("deliveries", id+".png"), info.Icon)
@@ -203,8 +164,14 @@ func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.iphone(node) == nil {
-		return Summary{}, fmt.Errorf("%s was unpaired while the build was read", name)
+	var nodes, names []string
+	for _, t := range to {
+		if h.iphone(t.node) != nil {
+			nodes, names = append(nodes, t.node), append(names, t.name)
+		}
+	}
+	if len(nodes) == 0 {
+		return Summary{}, errors.New("its iPhones were unpaired while the build was read")
 	}
 	fname := clean(filepath.Base(req.Path), 255)
 	if isApp {
@@ -224,7 +191,7 @@ func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	r := &record{Delivery: wire.Delivery{Manifest: b, Sig: sig}, m: m, To: node, IPA: info}
+	r := &record{Delivery: wire.Delivery{Manifest: b, Sig: sig}, m: m, IPA: info, For: aud.For, Phones: nodes}
 	if err := h.saveRecord(r); err != nil {
 		return Summary{}, err
 	}
@@ -238,25 +205,39 @@ func (h *Host) pushIPA(req PushRequest, isApp bool) (Summary, error) {
 	h.records = append(h.records, r)
 	h.prune()
 	h.broadcast()
-	h.log.Printf("pushed %s: %s %s (%s) for %s, %.1f MB", id, info.BundleID, info.Version, info.Build, name, float64(size)/(1<<20))
-	go h.notify(id)
+	h.log.Printf("pushed %s: %s %s (%s) for %s, %.1f MB", id, info.BundleID, info.Version, info.Build, strings.Join(names, ", "), float64(size)/(1<<20))
+	for _, node := range nodes {
+		go h.notify(id, node)
+	}
 	s := h.summary(r)
 	s.Warnings = warnings
 	return s, nil
 }
 
-func check(info *ipa.Info, name, udid string, now time.Time) (warnings []string, err error) {
+func checkBuild(info *ipa.Info, now time.Time) (warnings []string, err error) {
 	if slices.Contains(info.Platforms, "iPhoneSimulator") {
 		return nil, errors.New("it's built for the Simulator: build it for a device (generic/platform=iOS)")
 	}
 	p := info.Profile
 	switch {
 	case p == nil:
-		return []string{"it's unsigned: " + name + " gets it as a download, to install with SideStore or AltStore"}, nil
+		return []string{"it's unsigned: it goes as a download, to install with SideStore or AltStore"}, nil
 	case p.Kind == ipa.AppStore:
 		return nil, errors.New("it's signed for the App Store, and iOS installs those only from the App Store or TestFlight: export it for ad hoc (release-testing) or development")
 	case !p.Expires.IsZero() && now.After(p.Expires):
 		return nil, fmt.Errorf("its provisioning profile %q expired on %s", p.Name, p.Expires.Local().Format("Jan 2, 2006"))
+	}
+	if !p.Expires.IsZero() && p.Expires.Sub(now) < 7*24*time.Hour {
+		warnings = append(warnings, fmt.Sprintf("its profile expires %s: the app stops opening then", p.Expires.Local().Format("Jan 2 15:04")))
+	}
+	return warnings, nil
+}
+
+func checkDevice(info *ipa.Info, name, udid string) (warnings []string, err error) {
+	p := info.Profile
+	switch {
+	case p == nil:
+		return nil, nil
 	case udid != "" && !p.Covers(udid):
 		return nil, fmt.Errorf("%s isn't in its provisioning profile %q: register UDID %s in your Apple developer account, then build it again", name, p.Name, udid)
 	}
@@ -265,9 +246,6 @@ func check(info *ipa.Info, name, udid string, now time.Time) (warnings []string,
 	}
 	if p.Kind == ipa.Development {
 		warnings = append(warnings, "a development build: "+name+" needs Developer Mode on (Settings, Privacy & Security)")
-	}
-	if !p.Expires.IsZero() && p.Expires.Sub(now) < 7*24*time.Hour {
-		warnings = append(warnings, fmt.Sprintf("its profile expires %s: the app stops opening then", p.Expires.Local().Format("Jan 2 15:04")))
 	}
 	return warnings, nil
 }
@@ -288,18 +266,17 @@ func (h *Host) packIn(app, id string) (sum string, size int64, err error) {
 	return h.copyInAs(tmp.Name(), id+".ipa")
 }
 
-func (h *Host) notify(id string) {
+func (h *Host) notify(id, node string) {
 	h.mu.Lock()
 	r := h.find(id)
 	if r == nil {
 		h.mu.Unlock()
 		return
 	}
-	ip := h.iphone(r.To)
+	ip := h.iphone(node)
 	if ip == nil || ip.Push == nil {
-		r.NotifyErr = "its notifications aren't on: the build is waiting in Cloche on it"
-		h.saveRecord(r)
-		h.broadcast()
+		r.at(node).NotifyErr = "its notifications aren't on: the build is waiting in Cloche on it"
+		h.touch(r)
 		h.mu.Unlock()
 		return
 	}
@@ -324,23 +301,23 @@ func (h *Host) notify(id string) {
 	if h.find(id) != r {
 		return
 	}
+	g := r.at(node)
 	switch {
 	case errors.Is(err, webpush.ErrGone):
-		if ip := h.iphone(r.To); ip != nil && ip.Push != nil && ip.Push.Endpoint == sub.Endpoint {
+		if ip := h.iphone(node); ip != nil && ip.Push != nil && ip.Push.Endpoint == sub.Endpoint {
 			ip.Push = nil
 			h.saveState()
 		}
-		r.NotifyErr = "its notifications were turned off: the build is waiting in Cloche on it"
+		g.NotifyErr = "its notifications were turned off: the build is waiting in Cloche on it"
 	case err != nil:
-		r.NotifyErr = "couldn't notify it: " + err.Error()
+		g.NotifyErr = "couldn't notify it: " + err.Error()
 	default:
-		r.Taken, r.NotifyErr = h.now().UTC(), ""
+		g.Taken, g.NotifyErr = h.now().UTC(), ""
 	}
 	if err != nil {
-		h.log.Printf("%s: notify: %v", id, err)
+		h.log.Printf("%s: notify %s: %v", id, node, err)
 	}
-	h.saveRecord(r)
-	h.broadcast()
+	h.touch(r)
 }
 
 func version(i *ipa.Info) string {

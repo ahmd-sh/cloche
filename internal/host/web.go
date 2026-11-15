@@ -181,6 +181,7 @@ type webBuild struct {
 }
 
 func (h *Host) webBuildOf(r *record, ip *iphone) webBuild {
+	g := r.of(ip.Node)
 	var src *wire.Source
 	if s := r.m.Source; s != nil {
 		c := *s
@@ -205,14 +206,14 @@ func (h *Host) webBuildOf(r *record, ip *iphone) webBuild {
 		}
 	}
 	switch {
-	case r.Result != nil && r.Result.Status == wire.Downloaded:
-		b.Status, b.StatusAt = "downloaded", r.ResultAt
-	case r.Result != nil && r.Result.Status == wire.Installing:
-		b.Status, b.StatusAt = "downloading", r.ResultAt
-	case r.Result != nil && r.Result.Status == wire.Asked:
-		b.Status, b.StatusAt = "asked", r.ResultAt
-	case !r.Opened.IsZero():
-		b.Status, b.StatusAt = "seen", r.Opened
+	case g.Result != nil && g.Result.Status == wire.Downloaded:
+		b.Status, b.StatusAt = "downloaded", g.ResultAt
+	case g.Result != nil && g.Result.Status == wire.Installing:
+		b.Status, b.StatusAt = "downloading", g.ResultAt
+	case g.Result != nil && g.Result.Status == wire.Asked:
+		b.Status, b.StatusAt = "asked", g.ResultAt
+	case !g.Opened.IsZero():
+		b.Status, b.StatusAt = "seen", g.Opened
 	}
 	return b
 }
@@ -229,18 +230,18 @@ func (h *Host) webMe(w http.ResponseWriter, r *http.Request) {
 	if ip == nil {
 		pr := h.pairing
 		open := pr != nil && pr.ios && h.now().Before(pr.expires) && (pr.friend != "" || h.owner == "" || p.Login == h.owner)
-		reply(w, map[string]any{"host": h.name, "paired": false, "pairing": open})
+		reply(w, map[string]any{"host": h.name, "display": h.state.Display, "paired": false, "pairing": open, "friend": open && pr.friend != ""})
 		return
 	}
 	h.seenAt[ip.Node] = h.now()
 	builds := []webBuild{}
 	for i := len(h.records) - 1; i >= 0; i-- {
-		if rec := h.records[i]; rec.To == ip.Node && !rec.Cleared && rec.IPA != nil {
+		if rec := h.records[i]; rec.forIPhone(ip) && !rec.of(ip.Node).Cleared {
 			builds = append(builds, h.webBuildOf(rec, ip))
 		}
 	}
 	reply(w, map[string]any{
-		"host": h.name, "paired": true, "name": ip.Name, "friend": ip.Friend,
+		"host": h.name, "display": h.state.Display, "paired": true, "name": ip.Name, "friend": ip.FriendName != "",
 		"udid": ip.UDID != "", "model": ip.Model, "notify": ip.Push != nil,
 		"vapid": h.pusher.PublicKey(), "builds": builds,
 	})
@@ -291,8 +292,9 @@ func (h *Host) webPair(w http.ResponseWriter, r *http.Request) {
 		ip = &iphone{Node: p.Node, Token: newSecret()}
 		h.state.IPhones = append(h.state.IPhones, ip)
 	}
-	ip.Machine, ip.Login, ip.Friend, ip.PairedAt = p.Name, p.Login, pr.friend != "", h.now().UTC()
-	ip.Name = h.uniqueName(ip, firstNonEmpty(pr.friend, nameFrom(p.Name)))
+	ip.Machine, ip.Login, ip.PairedAt = p.Name, p.Login, h.now().UTC()
+	ip.Friend, ip.FriendName = pr.friend != "", pr.friend
+	ip.Name = h.uniqueName(ip, firstNonEmpty(pr.friend, nameFrom(p.Name, "iphone")))
 	h.pairing = nil
 	h.epoch++
 	h.seenAt[ip.Node] = h.now()
@@ -303,44 +305,6 @@ func (h *Host) webPair(w http.ResponseWriter, r *http.Request) {
 	h.broadcast()
 	h.log.Printf("paired with iPhone %s (%s, %s)", ip.Name, p.Name, p.Login)
 	reply(w, map[string]any{"name": ip.Name})
-}
-
-func nameFrom(machine string) string {
-	var b strings.Builder
-	for _, c := range strings.ToLower(machine) {
-		switch {
-		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
-			b.WriteRune(c)
-		case b.Len() > 0 && !strings.HasSuffix(b.String(), "-"):
-			b.WriteByte('-')
-		}
-	}
-	s := strings.Trim(b.String(), "-")
-	if len(s) > 28 {
-		s = strings.Trim(s[:28], "-")
-	}
-	if s == "" {
-		s = "iphone"
-	}
-	return s
-}
-
-func (h *Host) uniqueName(self *iphone, name string) string {
-	for i := 1; ; i++ {
-		n := name
-		if i > 1 {
-			n = fmt.Sprintf("%s-%d", name, i)
-		}
-		taken := false
-		for _, ip := range h.state.IPhones {
-			if ip != self && strings.EqualFold(ip.Name, n) {
-				taken = true
-			}
-		}
-		if !taken {
-			return n
-		}
-	}
 }
 
 func firstNonEmpty(s ...string) string {
@@ -379,7 +343,7 @@ func (h *Host) webSubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, _ := json.Marshal(map[string]string{"title": "Notifications are on", "body": "Builds from " + h.name + " show up here.", "url": "/", "tag": "cloche"})
+	msg, _ := json.Marshal(map[string]string{"title": "Notifications are on", "body": "Builds from " + h.label() + " show up here.", "url": "/", "tag": "cloche"})
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	err = h.pusher.Send(ctx, sub, webpush.Message{Payload: msg, TTL: time.Hour, Urgency: "high"})
@@ -422,7 +386,7 @@ func (h *Host) webUnpair(w http.ResponseWriter, r *http.Request) {
 func (h *Host) mine(r *http.Request) (*record, *iphone) {
 	rec := h.find(r.PathValue("id"))
 	ip := h.iphone(nodeOf(r))
-	if rec == nil || ip == nil || rec.To != ip.Node || rec.IPA == nil {
+	if rec == nil || ip == nil || !rec.forIPhone(ip) {
 		return nil, nil
 	}
 	return rec, ip
@@ -436,10 +400,9 @@ func (h *Host) webBuild(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "no such build: it may have been cleared")
 		return
 	}
-	if rec.Opened.IsZero() {
-		rec.Opened = h.now().UTC()
-		h.saveRecord(rec)
-		h.broadcast()
+	if g := rec.at(ip.Node); g.Opened.IsZero() {
+		g.Opened = h.now().UTC()
+		h.touch(rec)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	reply(w, h.webBuildOf(rec, ip))
@@ -448,14 +411,13 @@ func (h *Host) webBuild(w http.ResponseWriter, r *http.Request) {
 func (h *Host) webClear(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	rec, _ := h.mine(r)
+	rec, ip := h.mine(r)
 	if rec == nil {
 		fail(w, http.StatusNotFound, "no such build")
 		return
 	}
-	rec.Cleared = true
-	h.saveRecord(rec)
-	h.broadcast()
+	rec.at(ip.Node).Cleared = true
+	h.touch(rec)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -491,9 +453,9 @@ func (h *Host) webUDIDProfile(w http.ResponseWriter, r *http.Request) {
 	<key>PayloadOrganization</key>
 	<string>Cloche</string>
 	<key>PayloadDisplayName</key>
-	<string>` + xmlEscape("Send this iPhone's ID to "+h.name) + `</string>
+	<string>` + xmlEscape("Send this iPhone's ID to "+h.label()) + `</string>
 	<key>PayloadDescription</key>
-	<string>` + xmlEscape("Sends "+h.name+" this device's UDID, model and iOS version, so builds can be signed for it. Nothing is installed.") + `</string>
+	<string>` + xmlEscape("Sends "+h.label()+" this device's UDID, model and iOS version, so builds can be signed for it. Nothing is installed.") + `</string>
 	<key>PayloadIdentifier</key>
 	<string>sh.ahmd.cloche.udid</string>
 	<key>PayloadUUID</key>
@@ -593,18 +555,18 @@ func deviceAttributes(b []byte) (map[string]string, error) {
 
 func (h *Host) webManifest(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
-	rec, _ := h.mine(r)
+	rec, ip := h.mine(r)
 	if rec == nil {
 		h.mu.Unlock()
 		http.NotFound(w, r)
 		return
 	}
-	rec.Asked = h.now().UTC()
-	if !downloaded(rec) {
-		rec.Result, rec.ResultAt = &wire.Result{Status: wire.Asked}, rec.Asked
+	g := rec.at(ip.Node)
+	g.Asked = h.now().UTC()
+	if !downloaded(g) {
+		g.Result, g.ResultAt = &wire.Result{Status: wire.Asked}, g.Asked
 	}
-	h.saveRecord(rec)
-	h.broadcast()
+	h.touch(rec)
 	info := rec.IPA
 	id := rec.m.ID
 	h.mu.Unlock()
@@ -646,27 +608,29 @@ func (h *Host) webManifest(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, plist)
 }
 
-func downloaded(r *record) bool { return r.Result != nil && r.Result.Status == wire.Downloaded }
+func downloaded(g *progress) bool { return g.Result != nil && g.Result.Status == wire.Downloaded }
 
 func (h *Host) webIPA(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
-	rec, _ := h.mine(r)
+	rec, ip := h.mine(r)
 	if rec == nil {
 		h.mu.Unlock()
 		http.NotFound(w, r)
 		return
 	}
-	track := r.Method == http.MethodGet && !downloaded(rec)
+	node := ip.Node
+	track := r.Method == http.MethodGet && !downloaded(rec.at(node))
 	if track {
 		now := h.now().UTC()
-		if rec.Fetched.IsZero() {
-			rec.Fetched = now
+		g := rec.at(node)
+		if g.Fetched.IsZero() {
+			g.Fetched = now
 		}
-		rec.Result, rec.ResultAt = &wire.Result{Status: wire.Installing}, now
-		h.saveRecord(rec)
-		h.broadcast()
+		g.Result, g.ResultAt = &wire.Result{Status: wire.Installing}, now
+		h.touch(rec)
 	}
 	id, size, name := rec.m.ID, rec.m.File.Size, rec.m.File.Name
+	key := id + "/" + node
 	h.mu.Unlock()
 
 	f, err := os.Open(h.path("deliveries", id+".ipa"))
@@ -704,18 +668,20 @@ func (h *Host) webIPA(w http.ResponseWriter, r *http.Request) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	rec = h.find(id)
-	if rec == nil || downloaded(rec) {
+	if rec == nil || downloaded(rec.at(node)) {
 		return
 	}
-	if from >= 0 && from <= h.served[id] {
-		h.served[id] = max(h.served[id], from+cw.n)
+	if from >= 0 && from <= h.served[key] {
+		h.served[key] = max(h.served[key], from+cw.n)
 	}
-	if h.served[id] >= size {
-		delete(h.served, id)
-		rec.Result, rec.ResultAt = &wire.Result{Status: wire.Downloaded}, h.now().UTC()
-		h.log.Printf("%s: downloaded by %s", id, h.summary(rec).To)
-		h.saveRecord(rec)
-		h.broadcast()
+	if h.served[key] >= size {
+		delete(h.served, key)
+		g := rec.at(node)
+		g.Result, g.ResultAt = &wire.Result{Status: wire.Downloaded}, h.now().UTC()
+		if ip := h.iphone(node); ip != nil {
+			h.log.Printf("%s: downloaded by %s", id, ip.Name)
+		}
+		h.touch(rec)
 	}
 }
 

@@ -22,7 +22,10 @@ const adminDNS = "https://login.tailscale.com/admin/dns"
 
 func setup(args []string) error {
 	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	name := fs.String("name", "", "the name phones show for this computer (default: its machine name; \"\" to go back to it)")
 	fs.Parse(args)
+	named := false
+	fs.Visit(func(f *flag.Flag) { named = named || f.Name == "name" })
 	ctx := context.Background()
 
 	bin, err := os.Executable()
@@ -67,7 +70,7 @@ func setup(args []string) error {
 		}
 	}
 	if health.Tagged {
-		notes = append(notes, "This computer is a tagged node. Tailscale names no owner for it, and only friends' iPhones can pair with it.")
+		notes = append(notes, "This computer is a tagged node. Tailscale names no owner for it, and only friends' phones can pair with it.")
 	}
 
 	stopService()
@@ -98,6 +101,14 @@ func setup(args []string) error {
 	if err != nil {
 		return exit{1, "cloche serve didn't start. Its logs say why: " + svc.how}
 	}
+	if named {
+		if err := l.do(ctx, "POST", "/display", nil, map[string]string{"name": *name}, nil); err != nil {
+			return err
+		}
+		if err := l.do(ctx, "GET", "/status", nil, nil, &st); err != nil {
+			return err
+		}
+	}
 
 	who := self.Login
 	if self.Tagged {
@@ -113,16 +124,27 @@ func setup(args []string) error {
 	if note := onPath(bin); note != "" {
 		notes = append(notes, note)
 	}
-	if st.Phone != nil {
-		fmt.Printf("phone      %s\n", st.Phone.Name)
+	if st.Display != "" {
+		fmt.Printf("name       %s, as phones show it\n", st.Display)
+	}
+	for _, p := range st.Phones {
+		if p.Friend != "" {
+			fmt.Printf("phone      %s, %s's\n", p.Name, p.Friend)
+		} else {
+			fmt.Printf("phone      %s\n", p.Name)
+		}
 	}
 	for _, ip := range st.IPhones {
-		fmt.Printf("iphone     %s\n", ip.Name)
+		if ip.Friend != "" {
+			fmt.Printf("iphone     %s, %s's\n", ip.Name, ip.Friend)
+		} else {
+			fmt.Printf("iphone     %s\n", ip.Name)
+		}
 	}
 	for _, n := range notes {
 		fmt.Printf("\n%s\n", n)
 	}
-	if st.Phone != nil || len(st.IPhones) > 0 {
+	if len(st.Phones) > 0 || len(st.IPhones) > 0 {
 		return nil
 	}
 
@@ -133,9 +155,9 @@ func setup(args []string) error {
 	fmt.Printf(`
 Next, pair your phone. It needs Tailscale%s.
 
-  cloche pair        an Android phone: scan the code with its camera, and
-                     the page it opens helps install Cloche
-  cloche pair -ios   an iPhone
+  cloche pair -android   an Android phone: scan the code with its camera,
+                         and the page it opens helps install Cloche
+  cloche pair -ios       an iPhone
 `, signIn)
 	return nil
 }

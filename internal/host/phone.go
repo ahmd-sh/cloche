@@ -48,16 +48,6 @@ func (h *Host) pair(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusServiceUnavailable, "can't ask Tailscale who this is")
 		return
 	}
-	if !h.ownedBy(p) {
-		if h.owner == "" {
-			h.log.Printf("pair from %s refused: %v", p.Name, errNoOwner)
-			fail(w, http.StatusForbidden, "this computer's owner is unknown to Tailscale: it can't pair a phone")
-			return
-		}
-		h.log.Printf("pair refused: %s is %s's, not %s's", p.Name, p.Login, h.owner)
-		fail(w, http.StatusForbidden, "not one of "+h.owner+"'s devices")
-		return
-	}
 	var req wire.PairRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
 		fail(w, http.StatusBadRequest, "bad request")
@@ -72,7 +62,17 @@ func (h *Host) pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if pr.ios {
-		fail(w, http.StatusForbidden, "this pairing is for an iPhone: run cloche pair on the computer")
+		fail(w, http.StatusForbidden, "this pairing is for an iPhone: run cloche pair -android on the computer")
+		return
+	}
+	if pr.friend == "" && !h.ownedBy(p) {
+		if h.owner == "" {
+			h.log.Printf("pair from %s refused: %v", p.Name, errNoOwner)
+			fail(w, http.StatusForbidden, "this computer's owner is unknown to Tailscale: it pairs only friends' phones")
+			return
+		}
+		h.log.Printf("pair refused: %s is %s's, not %s's", p.Name, p.Login, h.owner)
+		fail(w, http.StatusForbidden, "not one of "+h.owner+"'s devices: a friend's phone needs a friend's code")
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(normalCode(req.Code)), []byte(normalCode(pr.code))) != 1 {
@@ -88,7 +88,15 @@ func (h *Host) pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := newSecret()
-	h.state.Phone = &phone{Node: p.Node, Name: p.Name, Device: clean(req.Device, 64), Secret: hash(secret), PairedAt: h.now().UTC()}
+	ph := h.phone(p.Node)
+	if ph == nil {
+		ph = &phone{Node: p.Node}
+		h.state.Phones = append(h.state.Phones, ph)
+	}
+	ph.Machine, ph.Login, ph.Friend = p.Name, p.Login, pr.friend
+	ph.Device, ph.Secret, ph.PairedAt = clean(req.Device, 64), hash(secret), h.now().UTC()
+	ph.App, ph.AppCode, ph.AppOffered = "", 0, ""
+	ph.Name = h.uniqueName(ph, firstNonEmpty(pr.friend, nameFrom(p.Name, "phone")))
 	h.pairing = nil
 	h.epoch++
 	if err := h.saveState(); err != nil {
@@ -96,8 +104,15 @@ func (h *Host) pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.broadcast()
-	h.log.Printf("paired with %s (%s)", p.Name, p.Node)
-	reply(w, wire.PairResponse{Host: h.name, Addr: h.addr, Key: h.spki, Secret: secret, Head: h.headForNewPhone()})
+	h.log.Printf("paired with %s (%s, %s, %s)", ph.Name, p.Name, p.Node, p.Login)
+	reply(w, wire.PairResponse{Host: h.name, Name: h.state.Display, Addr: h.addr, Key: h.spki, Secret: secret, Head: h.headForNewPhone()})
+}
+
+type phoneKey struct{}
+
+func phoneOf(r *http.Request) *phone {
+	p, _ := r.Context().Value(phoneKey{}).(*phone)
+	return p
 }
 
 func (h *Host) authed(next http.HandlerFunc) http.HandlerFunc {
@@ -109,20 +124,18 @@ func (h *Host) authed(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		h.mu.Lock()
-		ph := h.state.Phone
+		ph := h.phone(p.Node)
 		h.mu.Unlock()
 		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		switch {
 		case ph == nil:
-			fail(w, http.StatusUnauthorized, "no phone is paired: pair again")
-		case p.Node != ph.Node:
-			h.log.Printf("refused %s %s from %s (%s): not the paired phone", r.Method, r.URL.Path, p.Name, p.Node)
-			fail(w, http.StatusUnauthorized, "this isn't the paired phone: pair again")
+			h.log.Printf("refused %s %s from %s (%s): not a paired phone", r.Method, r.URL.Path, p.Name, p.Node)
+			fail(w, http.StatusUnauthorized, "this phone isn't paired with this computer: pair again")
 		case subtle.ConstantTimeCompare([]byte(hash(token)), []byte(ph.Secret)) != 1:
 			h.log.Printf("refused %s %s from %s: wrong secret", r.Method, r.URL.Path, p.Name)
 			fail(w, http.StatusUnauthorized, "unknown secret: pair again")
 		default:
-			next(w, r)
+			next(w, r.WithContext(context.WithValue(r.Context(), phoneKey{}, ph)))
 		}
 	}
 }
@@ -132,11 +145,11 @@ func (h *Host) inbox(w http.ResponseWriter, r *http.Request) {
 	wait, _ := strconv.Atoi(r.URL.Query().Get("wait"))
 	d := min(max(time.Duration(wait)*time.Second, 0), MaxWait)
 
+	paired := phoneOf(r)
 	h.mu.Lock()
-	h.polls++
-	h.seen = h.now()
-	paired := h.state.Phone
-	if name, code, ok := appVersion(r.UserAgent()); ok && paired != nil && (paired.App != name || paired.AppCode != code) {
+	h.polls[paired.Node]++
+	h.seenAt[paired.Node] = h.now()
+	if name, code, ok := appVersion(r.UserAgent()); ok && (paired.App != name || paired.AppCode != code) {
 		paired.App, paired.AppCode = name, code
 		h.saveState()
 	}
@@ -144,38 +157,47 @@ func (h *Host) inbox(w http.ResponseWriter, r *http.Request) {
 	h.mu.Unlock()
 	defer func() {
 		h.mu.Lock()
-		h.polls--
-		h.seen = h.now()
+		if h.polls[paired.Node]--; h.polls[paired.Node] <= 0 {
+			delete(h.polls, paired.Node)
+		}
+		h.seenAt[paired.Node] = h.now()
+		h.broadcast()
 		h.mu.Unlock()
 	}()
 
+	waiting := func() bool {
+		if after > h.state.Seq || h.phone(paired.Node) != paired {
+			return true
+		}
+		for i := len(h.records) - 1; i >= 0 && h.records[i].m.Seq > after; i-- {
+			if h.records[i].forPhone(paired) {
+				return true
+			}
+		}
+		return false
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), d)
 	defer cancel()
-	h.wait(ctx, func() bool {
-		return after > h.state.Seq || len(h.records) > 0 && h.records[len(h.records)-1].m.Seq > after || h.state.Phone != paired
-	})
+	h.wait(ctx, waiting)
 
 	h.mu.Lock()
-	if h.state.Phone != paired {
+	if h.phone(paired.Node) != paired {
 		h.mu.Unlock()
 		fail(w, http.StatusUnauthorized, "unpaired on the computer: pair again")
 		return
 	}
-	in := wire.Inbox{Head: h.state.Seq, Deliveries: []wire.Delivery{}}
+	in := wire.Inbox{Head: h.state.Seq, Name: h.state.Display, Deliveries: []wire.Delivery{}}
 	if after <= h.state.Seq {
 		for _, rec := range h.records {
-			if rec.m.Seq <= after || rec.To != "" {
+			if rec.m.Seq <= after || !rec.forPhone(paired) {
 				continue
 			}
 			in.Deliveries = append(in.Deliveries, rec.Delivery)
-			if rec.Taken.IsZero() {
-				rec.Taken = h.now().UTC()
-				h.saveRecord(rec)
+			if g := rec.at(paired.Node); g.Taken.IsZero() {
+				g.Taken = h.now().UTC()
+				h.touch(rec)
 			}
 		}
-	}
-	if len(in.Deliveries) > 0 {
-		h.broadcast()
 	}
 	h.mu.Unlock()
 	reply(w, in)
@@ -197,15 +219,17 @@ func appVersion(ua string) (string, int64, bool) {
 
 func (h *Host) apk(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	ph := phoneOf(r)
 	h.mu.Lock()
 	rec := h.find(id)
-	if rec != nil && rec.To != "" {
+	if rec != nil && !rec.forPhone(ph) {
 		rec = nil
 	}
-	if rec != nil && rec.Fetched.IsZero() {
-		rec.Fetched = h.now().UTC()
-		h.saveRecord(rec)
-		h.broadcast()
+	if rec != nil {
+		if g := rec.at(ph.Node); g.Fetched.IsZero() {
+			g.Fetched = h.now().UTC()
+			h.touch(rec)
+		}
 	}
 	h.mu.Unlock()
 	if rec == nil {
@@ -240,20 +264,22 @@ func (h *Host) result(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.Detail = clean(res.Detail, 500)
+	res.Package, res.VersionName, res.Signer = clean(res.Package, 255), clean(res.VersionName, 100), clean(res.Signer, 200)
+	ph := phoneOf(r)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	rec := h.find(r.PathValue("id"))
-	if rec == nil || rec.To != "" {
+	if rec == nil || !rec.forPhone(ph) {
 		fail(w, http.StatusNotFound, "no such delivery")
 		return
 	}
-	rec.Result, rec.ResultAt = &res, h.now().UTC()
-	if err := h.saveRecord(rec); err != nil {
+	g := rec.at(ph.Node)
+	g.Result, g.ResultAt = &res, h.now().UTC()
+	if err := h.touch(rec); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	h.broadcast()
-	h.log.Printf("%s: %s %s", rec.m.ID, res.Status, res.Detail)
+	h.log.Printf("%s: %s on %s %s", rec.m.ID, res.Status, ph.Name, res.Detail)
 	w.WriteHeader(http.StatusNoContent)
 }
 

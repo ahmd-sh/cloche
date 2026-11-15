@@ -105,10 +105,10 @@ func TestSendApp(t *testing.T) {
 	defer h.Close()
 	ctx := context.Background()
 
-	if err := sendApp(ctx, release.Client(), h, "0.3.2"); err == nil {
+	if err := sendApp(ctx, release.Client(), h, "0.3.2", []string{"nPhone"}); err == nil {
 		t.Error("sent an APK that doesn't match its checksum")
 	}
-	if err := sendApp(ctx, release.Client(), h, "0.3.1"); err != nil {
+	if err := sendApp(ctx, release.Client(), h, "0.3.1", []string{"nPhone"}); err != nil {
 		t.Fatal(err)
 	}
 	var st host.Status

@@ -162,7 +162,7 @@ func TestIPhonePairing(t *testing.T) {
 		t.Errorf("me before pairing: %s", w.Body)
 	}
 
-	a, _ := h.StartPairing(time.Minute)
+	a, _ := h.StartPairing(time.Minute, "")
 	if w := webCall(t, h, iphoneIP, "POST", "/api/pair", map[string]string{"code": a.Code}); w.Code != 403 {
 		t.Errorf("Android code paired an iPhone: %d", w.Code)
 	}
@@ -195,7 +195,7 @@ func TestIPhonePairing(t *testing.T) {
 	if name := pairIPhone(t, h, friendIP, "sam"); name != "sam" {
 		t.Errorf("friend is called %q", name)
 	}
-	if len(h.state.IPhones) != 2 || !h.state.IPhones[1].Friend || h.state.IPhones[0].Friend {
+	if len(h.state.IPhones) != 2 || !h.state.IPhones[1].Friend || h.state.IPhones[1].FriendName != "sam" || h.state.IPhones[0].Friend {
 		t.Errorf("iPhones: %+v", h.state.IPhones)
 	}
 	if w := webCall(t, h, phoneIP, "GET", "/api/builds/x", nil); w.Code != 401 {
@@ -268,7 +268,7 @@ func TestIPhoneDelivery(t *testing.T) {
 			t.Fatalf("waiting for %s", what)
 		}
 	}
-	waitFor("the unsigned build's notification", func() bool { r := h.find(u.ID); return !r.Taken.IsZero() || r.NotifyErr != "" })
+	waitFor("the unsigned build's notification", func() bool { g := h.find(u.ID).of("nIPhone"); return !g.Taken.IsZero() || g.NotifyErr != "" })
 	var ub webBuild
 	json.Unmarshal(webCall(t, h, iphoneIP, "GET", "/api/builds/"+u.ID, nil).Body.Bytes(), &ub)
 	if !ub.Sideload || ub.Download != "/m/"+u.ID+"/app.ipa?download=1" {
@@ -278,7 +278,7 @@ func TestIPhoneDelivery(t *testing.T) {
 		t.Errorf("download: %d %v", w.Code, w.Header())
 	}
 	webCall(t, h, iphoneIP, "POST", "/api/builds/"+u.ID+"/clear", nil)
-	if _, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: "nobody"}); err == nil {
+	if _, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: []string{"nobody"}}); err == nil {
 		t.Error("push to nobody")
 	}
 
@@ -286,12 +286,12 @@ func TestIPhoneDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.To != "iphone-17-pro" || s.IPA == nil || s.IPA.BundleID != "com.example.satchel" || len(s.Warnings) != 0 || s.File.Name != "Satchel.ipa" {
+	if len(s.Phones) != 1 || s.Phones[0].Phone != "iphone-17-pro" || s.IPA == nil || s.IPA.BundleID != "com.example.satchel" || len(s.Warnings) != 0 || s.File.Name != "Satchel.ipa" {
 		t.Errorf("summary: %+v", s)
 	}
-	waitFor("the notification", func() bool { r := h.find(s.ID); return !r.Taken.IsZero() || r.NotifyErr != "" })
-	if r := h.find(s.ID); r.NotifyErr != "" || ps.count() != 3 {
-		t.Errorf("notify: %q, %d sent", r.NotifyErr, ps.count())
+	waitFor("the notification", func() bool { g := h.find(s.ID).of("nIPhone"); return !g.Taken.IsZero() || g.NotifyErr != "" })
+	if g := h.find(s.ID).of("nIPhone"); g.NotifyErr != "" || ps.count() != 3 {
+		t.Errorf("notify: %q, %d sent", g.NotifyErr, ps.count())
 	}
 
 	res := pairPhone(t, h)
@@ -325,12 +325,12 @@ func TestIPhoneDelivery(t *testing.T) {
 		}
 	}
 
-	if w := webCall(t, h, iphoneIP, "GET", "/api/builds/"+s.ID, nil); w.Code != 200 || h.find(s.ID).Opened.IsZero() {
+	if w := webCall(t, h, iphoneIP, "GET", "/api/builds/"+s.ID, nil); w.Code != 200 || h.find(s.ID).of("nIPhone").Opened.IsZero() {
 		t.Errorf("build page: %d", w.Code)
 	}
 	w = webCall(t, h, iphoneIP, "GET", "/m/"+s.ID+"/manifest.plist", nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "<string>"+web+"/m/"+s.ID+"/app.ipa</string>") ||
-		!strings.Contains(w.Body.String(), "<string>com.example.satchel</string>") || h.find(s.ID).Result.Status != wire.Asked {
+		!strings.Contains(w.Body.String(), "<string>com.example.satchel</string>") || h.find(s.ID).of("nIPhone").Result.Status != wire.Asked {
 		t.Errorf("manifest: %d %s", w.Code, w.Body)
 	}
 	req := httptest.NewRequest("GET", web+"/m/"+s.ID+"/app.ipa", nil)
@@ -338,24 +338,24 @@ func TestIPhoneDelivery(t *testing.T) {
 	req.Header.Set("Range", "bytes=0-99")
 	rw := httptest.NewRecorder()
 	h.WebApp().ServeHTTP(rw, req)
-	if rw.Code != 206 || h.find(s.ID).Result.Status != wire.Installing {
-		t.Errorf("partial: %d %v", rw.Code, h.find(s.ID).Result)
+	if rw.Code != 206 || h.find(s.ID).of("nIPhone").Result.Status != wire.Installing {
+		t.Errorf("partial: %d %v", rw.Code, h.find(s.ID).of("nIPhone").Result)
 	}
 	w = webCall(t, h, iphoneIP, "GET", "/m/"+s.ID+"/app.ipa", nil)
-	if w.Code != 200 || int64(w.Body.Len()) != s.File.Size || h.find(s.ID).Result.Status != wire.Downloaded || !h.find(s.ID).Result.Final() {
-		t.Errorf("download: %d, %d bytes, %v", w.Code, w.Body.Len(), h.find(s.ID).Result)
+	if w.Code != 200 || int64(w.Body.Len()) != s.File.Size || h.find(s.ID).of("nIPhone").Result.Status != wire.Downloaded || !h.find(s.ID).of("nIPhone").Result.Final() {
+		t.Errorf("download: %d, %d bytes, %v", w.Code, w.Body.Len(), h.find(s.ID).of("nIPhone").Result)
 	}
 
-	f, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: "sam"})
+	f, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: []string{"sam"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.To != "sam" || len(f.Warnings) != 1 || !strings.Contains(f.Warnings[0], "UDID") {
+	if len(f.Phones) != 1 || f.Phones[0].Phone != "sam" || len(f.Warnings) != 1 || !strings.Contains(f.Warnings[0], "UDID") {
 		t.Errorf("friend's summary: %+v", f)
 	}
-	waitFor("the friend's notification", func() bool { return h.find(f.ID).NotifyErr != "" })
-	if !strings.Contains(h.find(f.ID).NotifyErr, "notifications aren't on") {
-		t.Errorf("friend without notifications: %q", h.find(f.ID).NotifyErr)
+	waitFor("the friend's notification", func() bool { return h.find(f.ID).of("nFriend").NotifyErr != "" })
+	if !strings.Contains(h.find(f.ID).of("nFriend").NotifyErr, "notifications aren't on") {
+		t.Errorf("friend without notifications: %q", h.find(f.ID).of("nFriend").NotifyErr)
 	}
 
 	webCall(t, h, iphoneIP, "POST", "/api/builds/"+s.ID+"/clear", nil)
@@ -369,7 +369,7 @@ func TestIPhoneDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor("the failed notification", func() bool { return h.find(g.ID).NotifyErr != "" })
+	waitFor("the failed notification", func() bool { return h.find(g.ID).of("nIPhone").NotifyErr != "" })
 	if h.state.IPhones[0].Push != nil {
 		t.Error("kept a gone subscription")
 	}
@@ -377,7 +377,7 @@ func TestIPhoneDelivery(t *testing.T) {
 	if w := webCall(t, h, friendIP, "POST", "/api/unpair", nil); w.Code != 204 || len(h.state.IPhones) != 1 {
 		t.Errorf("unpair: %d, %d left", w.Code, len(h.state.IPhones))
 	}
-	if _, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: "sam"}); err == nil {
+	if _, err := h.Push(ctx, PushRequest{Path: makeApp(t, udid), To: []string{"sam"}}); err == nil {
 		t.Error("pushed to an unpaired friend")
 	}
 }
@@ -401,18 +401,32 @@ func TestToPrefersNames(t *testing.T) {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if ip, _ := h.target("iphone-17-pro"); ip == nil || ip.Node != "nIPhone" {
+	pick := func(name string) *iphone {
+		a, err := h.audience([]string{name}, true)
+		if err != nil {
+			return nil
+		}
+		ips, err := h.iphonesFor(a)
+		if err != nil || len(ips) != 1 {
+			return nil
+		}
+		return ips[0]
+	}
+	if ip := pick("iphone-17-pro"); ip == nil || ip.Node != "nIPhone" {
 		t.Errorf("-to iphone-17-pro picked %+v", ip)
 	}
-	if ip, _ := h.target("iPhone 17 Pro"); ip != nil {
+	if ip := pick("iPhone 17 Pro"); ip != nil {
 		t.Errorf("an ambiguous machine name picked %s", ip.Name)
 	}
 	h.state.IPhones[1].Machine = "mine"
-	if ip, _ := h.target("iPhone 17 Pro"); ip != nil {
+	if ip := pick("iPhone 17 Pro"); ip != nil {
 		t.Errorf("a friend's machine name picked %s", ip.Name)
 	}
-	if ip, _ := h.target("mine"); ip == nil || ip.Node != "nIPhone" {
+	if ip := pick("mine"); ip == nil || ip.Node != "nIPhone" {
 		t.Errorf("my machine name picked %+v", ip)
+	}
+	if ip := pick("sam"); ip == nil || ip.Node != "nFriend" {
+		t.Errorf("a friend's name picked %+v", ip)
 	}
 }
 
@@ -436,8 +450,8 @@ func TestDownloadStatus(t *testing.T) {
 	status := func() string {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if r := h.find(s.ID); r.Result != nil {
-			return r.Result.Status
+		if g := h.find(s.ID).of("nIPhone"); g.Result != nil {
+			return g.Result.Status
 		}
 		return ""
 	}
@@ -508,7 +522,7 @@ func TestPruneKeepsEachKind(t *testing.T) {
 	}
 	n := 0
 	for _, r := range h.records {
-		if r.To != "" {
+		if r.ios() {
 			n++
 		}
 	}

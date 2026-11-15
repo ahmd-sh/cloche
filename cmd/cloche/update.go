@@ -175,23 +175,22 @@ func watchReleases(ctx context.Context, h *host.Host, logger *log.Logger) {
 			}
 			check.Reset(24 * time.Hour)
 		case <-phone.C:
-			app, ok := h.PhoneApp()
-			if !ok || app.Code == 0 || app.Code >= release.Code(cur) || app.Offered == cur || time.Since(tried) < time.Hour {
+			if time.Since(tried) < time.Hour {
+				continue
+			}
+			behind := h.Behind(release.Code(cur), cur)
+			if len(behind) == 0 {
 				continue
 			}
 			tried = time.Now()
-			if err := sendApp(ctx, c, h, cur); err != nil {
-				logger.Printf("sending Cloche %s to the phone: %v", cur, err)
-				continue
-			}
-			if err := h.SetAppOffered(cur); err != nil {
-				logger.Printf("%v", err)
+			if err := sendApp(ctx, c, h, cur, behind); err != nil {
+				logger.Printf("sending Cloche %s to phones: %v", cur, err)
 			}
 		}
 	}
 }
 
-func sendApp(ctx context.Context, c *http.Client, h *host.Host, version string) error {
+func sendApp(ctx context.Context, c *http.Client, h *host.Host, version string, nodes []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	m, err := release.Fetch(ctx, c, release.URL(version, "latest.json"))
@@ -218,6 +217,5 @@ func sendApp(ctx context.Context, c *http.Client, h *host.Host, version string) 
 	if err != nil {
 		return err
 	}
-	_, err = h.Push(ctx, host.PushRequest{Path: path, Note: "Cloche " + version})
-	return err
+	return h.OfferApp(ctx, path, version, nodes)
 }

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +80,7 @@ func call(t *testing.T, h http.Handler, from, method, target, secret string, bod
 
 func pairPhone(t *testing.T, h *Host) wire.PairResponse {
 	t.Helper()
-	p, _ := h.StartPairing(time.Minute)
+	p, _ := h.StartPairing(time.Minute, "")
 	w := call(t, h.PhoneAPI(), phoneIP, "POST", "/v1/pair", "", wire.PairRequest{Code: strings.ToLower(p.Code), Device: "Pixel"})
 	if w.Code != 200 {
 		t.Fatalf("pair: %d %s", w.Code, w.Body)
@@ -104,7 +105,7 @@ func TestPairing(t *testing.T) {
 		t.Errorf("pairing while none is open: %d", w.Code)
 	}
 
-	p, _ := h.StartPairing(time.Minute)
+	p, _ := h.StartPairing(time.Minute, "")
 	if w := call(t, api, strangerIP, "POST", "/v1/pair", "", wire.PairRequest{Code: p.Code}); w.Code != 403 {
 		t.Errorf("someone else's device paired: %d", w.Code)
 	}
@@ -122,8 +123,8 @@ func TestPairing(t *testing.T) {
 	if !bytes.Equal(res.Key, h.spki) || res.Secret == "" || res.Host != "mac" || res.Addr != "100.64.0.1:41778" {
 		t.Errorf("pair response: %+v", res)
 	}
-	if h.state.Phone.Node != "nPhone" || h.state.Phone.Secret == res.Secret {
-		t.Errorf("kept %+v", h.state.Phone)
+	if len(h.state.Phones) != 1 || h.state.Phones[0].Node != "nPhone" || h.state.Phones[0].Secret == res.Secret || h.state.Phones[0].Name != "phone" {
+		t.Errorf("kept %+v", h.state.Phones)
 	}
 	if w := call(t, api, phoneIP, "POST", "/v1/pair", "", wire.PairRequest{Code: p.Code}); w.Code != 403 {
 		t.Errorf("a code worked twice: %d", w.Code)
@@ -133,7 +134,7 @@ func TestPairing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(h2.spki, h.spki) || h2.state.Phone == nil {
+	if !bytes.Equal(h2.spki, h.spki) || len(h2.state.Phones) != 1 {
 		t.Error("reopened without the key or the phone")
 	}
 }
@@ -161,7 +162,9 @@ func TestOnlyThePairedPhone(t *testing.T) {
 	got := make(chan int)
 	go func() { got <- call(t, api, phoneIP, "GET", "/v1/inbox?after=0&wait=10", res.Secret, nil).Code }()
 	time.Sleep(50 * time.Millisecond)
-	h.Unpair()
+	if _, err := h.Unpair(""); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case code := <-got:
 		if code != 401 {
@@ -235,25 +238,30 @@ func TestDelivery(t *testing.T) {
 		t.Errorf("range: %d, %d bytes", rw.Code, rw.Body.Len())
 	}
 
-	done := make(chan Summary)
-	go func() {
-		w := call(t, h.LocalAPI(), "", "GET", "/deliveries/"+m.ID+"?until=final&wait=10", "", nil)
+	local := func(q string) Summary {
 		var s Summary
-		json.Unmarshal(w.Body.Bytes(), &s)
-		done <- s
-	}()
+		json.Unmarshal(call(t, h.LocalAPI(), "", "GET", "/deliveries/"+m.ID+q, "", nil).Body.Bytes(), &s)
+		return s
+	}
+	rev := local("").Rev
+	done := make(chan Summary)
+	go func() { done <- local(fmt.Sprintf("?until=change&since=%d&wait=10", rev)) }()
 	time.Sleep(50 * time.Millisecond)
 	if w := call(t, api, phoneIP, "POST", "/v1/result/"+m.ID, res.Secret, wire.Result{Status: wire.Ready}); w.Code != 204 {
 		t.Fatalf("result: %d", w.Code)
 	}
-	call(t, api, phoneIP, "POST", "/v1/result/"+m.ID, res.Secret, wire.Result{Status: wire.Installed, Package: "sh.ahmd.app"})
 	select {
 	case s := <-done:
-		if s.Result == nil || s.Result.Status != wire.Installed || s.Taken.IsZero() || s.Fetched.IsZero() {
-			t.Errorf("summary: %+v", s)
+		if len(s.Phones) != 1 || s.Phones[0].Result == nil || s.Phones[0].Result.Status != wire.Ready || s.Rev == rev {
+			t.Errorf("summary after ready: %+v", s)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the CLI's wait didn't end")
+	}
+	call(t, api, phoneIP, "POST", "/v1/result/"+m.ID, res.Secret, wire.Result{Status: wire.Installed, Package: "sh.ahmd.app"})
+	s = local("")
+	if p := s.Phones[0]; p.Phone != "phone" || p.Result.Status != wire.Installed || p.Taken.IsZero() || p.Fetched.IsZero() {
+		t.Errorf("summary: %+v", s)
 	}
 }
 
@@ -417,7 +425,7 @@ func TestNoOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(h.Close)
-	if _, err := h.StartPairing(time.Minute); err == nil {
+	if _, err := h.StartPairing(time.Minute, ""); err == nil {
 		t.Error("pairing opened with no owner")
 	}
 	if h.ownedBy(tailnet.Peer{Login: ""}) {
@@ -456,24 +464,34 @@ func TestPhoneReportsItsApp(t *testing.T) {
 	h.mu.Lock()
 	st := h.status()
 	h.mu.Unlock()
-	if st.Phone.App != "0.3.0" || st.Phone.AppCode != 3000 {
-		t.Errorf("phone's app: %q %d", st.Phone.App, st.Phone.AppCode)
+	if st.Phones[0].App != "0.3.0" || st.Phones[0].AppCode != 3000 {
+		t.Errorf("phone's app: %q %d", st.Phones[0].App, st.Phones[0].AppCode)
 	}
-	if err := h.SetAppOffered("0.3.1"); err != nil {
+	if b := h.Behind(3000, "0.3.0"); len(b) != 0 {
+		t.Errorf("behind its own version: %v", b)
+	}
+	b := h.Behind(3001, "0.3.1")
+	if len(b) != 1 || b[0] != "nPhone" {
+		t.Fatalf("behind: %v", b)
+	}
+	if err := h.OfferApp(context.Background(), fakeAPK(t, "cloche"), "0.3.1", b); err != nil {
 		t.Fatal(err)
+	}
+	if b := h.Behind(3001, "0.3.1"); len(b) != 0 {
+		t.Errorf("offered twice: %v", b)
 	}
 	h2, err := Open(Config{Dir: h.dir, Peers: h.peers})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if app, ok := h2.PhoneApp(); !ok || app.Code != 3000 || app.Offered != "0.3.1" {
-		t.Errorf("reopened with %+v", app)
+	if b := h2.Behind(3001, "0.3.1"); len(b) != 0 {
+		t.Errorf("reopened and offered again: %v", b)
 	}
 }
 
 func TestPairLinkOpensThePairPage(t *testing.T) {
 	h := newHost(t)
-	p, err := h.StartPairing(time.Minute)
+	p, err := h.StartPairing(time.Minute, "")
 	if err != nil {
 		t.Fatal(err)
 	}
