@@ -146,8 +146,20 @@ class ComputersTest {
     fun unreachableComputersBackOff() {
         assertEquals(1_000L, Links.backoff(1, 0))
         assertEquals(60_000L, Links.backoff(7, 0))
-        assertEquals(60_000L, Links.backoff(50, Links.HOUR - 1))
-        assertEquals(600_000L, Links.backoff(50, Links.HOUR))
+        assertEquals(60_000L, Links.backoff(50, Links.SLOW - 1))
+        assertEquals(600_000L, Links.backoff(50, Links.SLOW))
+    }
+
+    @Test
+    fun pollsToEveryComputerEndTogether() {
+        val phase = 12_345L
+        val tick = phase + 1_000 * Links.PERIOD
+        for (now in listOf(tick - Links.PERIOD + 1, tick - 100_000, tick - 5_000)) {
+            assertTrue(now + Links.hold(now, phase) * 1000L in tick until tick + 1000)
+        }
+        assertEquals(275, Links.hold(tick - 4_999, phase))
+        assertEquals(270, Links.hold(tick, phase))
+        for (now in tick - Links.PERIOD..tick step 997) assertTrue(Links.hold(now, phase) in 5..300)
     }
 
     @Test

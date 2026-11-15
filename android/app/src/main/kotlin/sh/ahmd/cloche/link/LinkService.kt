@@ -2,10 +2,13 @@ package sh.ahmd.cloche.link
 
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.Network
+import android.os.SystemClock
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +52,15 @@ class LinkService : Service() {
     private var watching: Job? = null
     private var dispatching: Job? = null
     private val stations = HashMap<String, Station>()
+    private var nudged = -NUDGE
+    private val screen = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - nudged < NUDGE || app.links.value.values.none { it is Link.Down }) return
+            nudged = now
+            app.kick()
+        }
+    }
 
     private class Station(val poll: Job, val work: Job, val wake: Channel<Unit>) {
         fun stop() {
@@ -65,6 +77,7 @@ class LinkService : Service() {
         super.onCreate()
         app = cloche
         instance = this
+        registerReceiver(screen, IntentFilter(Intent.ACTION_SCREEN_ON), RECEIVER_NOT_EXPORTED)
         val nm = getSystemService(NotificationManager::class.java)
         scope.launch {
             combine(app.links, app.store.state) { links, s -> Links.up(s.computers, links) to Links.title(s.computers, links) }
@@ -109,6 +122,7 @@ class LinkService : Service() {
 
     override fun onDestroy() {
         instance = null
+        unregisterReceiver(screen)
         stations.values.forEach { it.stop() }
         stations.clear()
         scope.cancel()
@@ -160,7 +174,7 @@ class LinkService : Service() {
             val api = Api(net, c.addr, app.secrets.open(c.secret))
             try {
                 val inbox = whileSame(net, c) {
-                    api.inbox(c.cursor, if (answered) WAIT else 0) { if (answered) live() }
+                    api.inbox(c.cursor, if (answered) Links.hold(System.currentTimeMillis()) else 0) { if (answered) live() }
                 } ?: continue
                 answered = true
                 live()
@@ -232,9 +246,9 @@ class LinkService : Service() {
 
     companion object {
         private const val TAG = "cloche"
-        const val WAIT = 270
 
         private const val GRACE = 20_000L
+        private const val NUDGE = 60_000L
 
         @Volatile private var instance: LinkService? = null
 

@@ -57,7 +57,9 @@ The computer keeps the latest, shows it in `cloche status`, and sends the
 phone its own release's Cloche when the phone's is older.
 
 Held open up to `wait` seconds (at most 300) until there's a delivery for
-this phone after `after`, then answered with all of them, oldest first. A
+this phone after `after`, then answered with all of them, oldest first. The
+phone picks `wait` to end its polls to every computer at the same moment, on
+a 270-second clock of its own. A
 push goes to the owner's phones, or to the friends and phones `-to` names. The phone moves its
 cursor to `head`, and polls again at once. A cursor past `head` (the computer's
 state was reset) is answered at once, and the phone starts again from

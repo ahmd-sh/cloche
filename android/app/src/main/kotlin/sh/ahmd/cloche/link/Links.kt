@@ -2,6 +2,7 @@ package sh.ahmd.cloche.link
 
 import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.labels
+import kotlin.random.Random
 
 object Links {
     fun of(computers: List<Computer>, links: Map<String, Link>): List<Pair<Computer, Link>> =
@@ -48,8 +49,17 @@ object Links {
 
     const val HOUR = 3_600_000L
     const val SLOW = 600_000L
+    const val PERIOD = 270_000L
+    private const val SOON = 5_000L
+    private val PHASE = Random.nextLong(PERIOD)
     private val BACKOFF = longArrayOf(1, 2, 5, 10, 20, 30, 60)
 
     fun backoff(failures: Int, downFor: Long): Long =
-        if (downFor >= HOUR) SLOW else BACKOFF[(failures - 1).coerceIn(0, BACKOFF.lastIndex)] * 1000L
+        if (downFor >= SLOW) SLOW else BACKOFF[(failures - 1).coerceIn(0, BACKOFF.lastIndex)] * 1000L
+
+    fun hold(now: Long, phase: Long = PHASE): Int {
+        val left = PERIOD - Math.floorMod(now - phase, PERIOD)
+        val until = if (left < SOON) left + PERIOD else left
+        return ((until + 999) / 1000).toInt()
+    }
 }

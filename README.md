@@ -170,10 +170,13 @@ keeps its own name for its computer.
 
 `cloche serve` listens only on the computer's tailnet address. The phone
 keeps a long poll open from a foreground service, and a push reaches it as
-soon as it's made. The server holds each poll for up to 270 seconds, which
-bounds how long a dead connection goes unnoticed. Tailnet addresses stay the
-same as the phone moves between networks. [docs/protocol.md](docs/protocol.md)
-has the wire format.
+soon as it's made. The server holds each poll for about four and a half
+minutes, which bounds how long a dead connection goes unnoticed. The phone
+times its polls to end together, and with several computers its radio wakes
+once for all of them. A computer it can't reach for ten minutes is tried
+every ten minutes after that, and again whenever the screen comes on.
+Tailnet addresses stay the same as the phone moves between networks.
+[docs/protocol.md](docs/protocol.md) has the wire format.
 
 ## Security
 
