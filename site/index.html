@@ -25,7 +25,7 @@
   <p class="dim">You need <a href="https://tailscale.com/download">Tailscale</a> on the computer and the phone, signed in to the same account.</p>
   <p class="label">macOS and Linux</p>
   <div class="cmd"><code>curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh</code><button type="button">Copy</button></div>
-  <p class="dim">The script downloads cloche from the latest <a href="https://github.com/ahmd-sh/cloche/releases/latest">release</a>, checks it against the release's checksums, puts it in your user folder, and runs <code>cloche setup</code>. Setup keeps <code>cloche serve</code> running in the background and adds a skill that tells Claude Code how to use cloche.</p>
+  <p class="dim">The script downloads cloche from the latest <a href="https://github.com/ahmd-sh/cloche/releases/latest">release</a>, checks it against the release's checksums, puts it in your user folder, and runs <code>cloche setup</code>. Setup keeps <code>cloche serve</code> running in the background and adds a skill that tells Claude Code how to use cloche. If no phone is paired yet, it asks which kind you have and pairs it.</p>
   <p class="label">With Go</p>
   <div class="cmd"><code>go install github.com/ahmd-sh/cloche/cmd/cloche@latest &amp;&amp; cloche setup</code><button type="button">Copy</button></div>
 

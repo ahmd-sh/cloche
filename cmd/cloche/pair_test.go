@@ -10,6 +10,29 @@ import (
 	"github.com/ahmd-sh/cloche/internal/wire"
 )
 
+func TestOfferPairing(t *testing.T) {
+	for _, c := range []struct {
+		in       io.Reader
+		pairs    string
+		commands bool
+	}{
+		{nil, "", true},
+		{strings.NewReader(""), "", true},
+		{strings.NewReader("a\n"), "android", false},
+		{strings.NewReader("x\niphone\n"), "iphone", false},
+	} {
+		var out strings.Builder
+		pairs := ""
+		err := offerPairing(c.in, &out, func(ios bool) error {
+			pairs = map[bool]string{false: "android", true: "iphone"}[ios]
+			return nil
+		})
+		if err != nil || pairs != c.pairs || strings.Contains(out.String(), "cloche pair -android") != c.commands {
+			t.Errorf("in %v: paired %q, err %v, said %q", c.in, pairs, err, out.String())
+		}
+	}
+}
+
 func TestChooseKind(t *testing.T) {
 	for in, want := range map[string]bool{
 		"a\n":              false,

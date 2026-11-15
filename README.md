@@ -40,8 +40,9 @@ cloche setup`.
 
 `cloche setup` runs `cloche serve` with launchd on macOS or a systemd user
 service on Linux, and adds the agent skill. `cloche uninstall` removes both.
+When no phone is paired yet, setup asks which kind you have and pairs it.
 
-Then pair the phone:
+To pair a phone yourself:
 
 ```sh
 cloche pair -android    # scan the code with the phone's camera, or type it into Cloche

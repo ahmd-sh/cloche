@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -149,16 +150,52 @@ func setup(args []string) error {
 	}
 
 	signIn := ""
+	var in io.Reader
 	if !self.Tagged {
 		signIn = ", signed in as " + self.Login
+		if f := console(); f != nil {
+			defer f.Close()
+			in = f
+		}
 	}
-	fmt.Printf(`
-Next, pair your phone. It needs Tailscale%s.
+	fmt.Printf("\nNext, pair your phone. It needs Tailscale%s.\n\n", signIn)
+	return offerPairing(in, os.Stdout, func(ios bool) error {
+		if ios {
+			return pairIPhone(ctx, l, 15*time.Minute, "")
+		}
+		return pairAndroid(ctx, l, 15*time.Minute, "")
+	})
+}
 
-  cloche pair -android   an Android phone: scan the code with its camera,
+func console() *os.File {
+	if terminal(os.Stdin) {
+		return os.Stdin
+	}
+	if !terminal(os.Stdout) {
+		return nil
+	}
+	f, err := os.Open("/dev/tty")
+	if err != nil {
+		return nil
+	}
+	if !terminal(f) {
+		f.Close()
+		return nil
+	}
+	return f
+}
+
+func offerPairing(in io.Reader, out io.Writer, pair func(ios bool) error) error {
+	if in != nil {
+		if ios, err := chooseKind(in, out); err == nil {
+			fmt.Fprintln(out)
+			return pair(ios)
+		}
+	}
+	fmt.Fprint(out, `  cloche pair -android   an Android phone: scan the code with its camera,
                          and the page it opens helps install Cloche
   cloche pair -ios       an iPhone
-`, signIn)
+`)
 	return nil
 }
 
