@@ -4,8 +4,11 @@ import android.app.Application
 import android.content.Context
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import sh.ahmd.cloche.deliver.Installer
 import sh.ahmd.cloche.deliver.Pipeline
 import kotlinx.coroutines.launch
@@ -31,9 +34,9 @@ class Cloche : Application() {
 
     val scope = MainScope()
 
-    val link = MutableStateFlow<Link>(Link.Connecting)
+    val links = MutableStateFlow<Map<String, Link>>(emptyMap())
 
-    val kicks = Channel<Unit>(Channel.CONFLATED)
+    val kicks = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     val work = Channel<Unit>(Channel.CONFLATED)
 
@@ -55,12 +58,24 @@ class Cloche : Application() {
         }
         pipeline.refresh()
         scope.launch { pipeline.tidy() }
-        if (store.value.paired != null) Watchdog.schedule(this)
+        if (store.value.computers.isNotEmpty()) Watchdog.schedule(this)
     }
 
     fun kick() {
-        kicks.trySend(Unit)
+        kicks.tryEmit(Unit)
         work.trySend(Unit)
+    }
+
+    fun forget(id: String, why: String? = null) {
+        val c = store.value.computer(id) ?: return
+        store.update { s ->
+            val rest = s.computers.filter { it.id != id }
+            s.orphan(id).copy(computers = rest, unpaired = if (rest.isEmpty()) why ?: s.unpaired else null)
+        }
+        links.update { it - id }
+        pipeline.forgotten(id)
+        if (why != null) notices.unpaired(c.name)
+        if (store.value.computers.isEmpty()) Watchdog.cancel(this)
     }
 
     fun apkFile(id: String) = File(filesDir, "apk/$id.apk")

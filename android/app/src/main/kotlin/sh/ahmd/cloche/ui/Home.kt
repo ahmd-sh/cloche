@@ -20,22 +20,29 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import sh.ahmd.cloche.link.Link
+import sh.ahmd.cloche.link.Links
+import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.Delivery
-import sh.ahmd.cloche.store.Paired
 import sh.ahmd.cloche.store.Saved
 import sh.ahmd.cloche.store.Stage
 
 @Composable
 fun Home(
     state: Saved,
-    link: Link,
+    links: Map<String, Link>,
     checks: Checks,
     mobile: Boolean,
     onPhone: Set<String>,
@@ -53,10 +60,12 @@ fun Home(
     onClear: (List<String>) -> Unit,
     onSettings: () -> Unit,
 ) {
-    val paired = state.paired
+    val computers = state.computers
     val haptics = haptics()
     val arm = rememberArm()
-    val all = remember(state.deliveries) { state.shown }
+    var only by rememberSaveable { mutableStateOf<String?>(null) }
+    val filter = only?.takeIf { id -> computers.size > 1 && computers.any { it.id == id } }
+    val all = remember(state.deliveries, filter) { state.shown.filter { filter == null || it.from == filter } }
     val shown = remember(all) { prominent(all) }
     val here = remember { all.map { it.id }.toSet() }
     val listed = if (state.folded) all.filter { it.stage in Underway } else all
@@ -67,12 +76,13 @@ fun Home(
         item(key = "head") {
             Masthead("Sheet 01 · Builds", action = "Settings", onAction = onSettings)
             Spacer(Modifier.height(18.dp))
-            LinkPanel(link, paired, now, all.maxOfOrNull { it.seq }) {
+            val link = Links.overall(computers, links)
+            LinkPanel(link, Links.of(computers, links), now, state.deliveries.maxOfOrNull { it.received }) {
                 haptics.tick()
                 if (link == Link.NoTailnet) onFix("tailscale") else onRetry()
             }
         }
-        if (paired != null && unmet.isNotEmpty()) {
+        if (computers.isNotEmpty() && unmet.isNotEmpty()) {
             item(key = "needs") { NeedsPanel(unmet, onFix, Modifier.animateItem()) }
         }
         item(key = "rule") {
@@ -91,9 +101,16 @@ fun Home(
                     },
                 )
                 Spacer(Modifier.height(14.dp))
+                if (computers.size > 1) {
+                    Filter(computers, filter) {
+                        haptics.tick()
+                        only = it
+                    }
+                    Spacer(Modifier.height(14.dp))
+                }
             }
         }
-        if (all.isEmpty()) item(key = "empty") { Empty(paired?.host, Modifier.animateItem()) }
+        if (all.isEmpty()) item(key = "empty") { Empty(computers.singleOrNull()?.name ?: computers.find { it.id == filter }?.name, Modifier.animateItem()) }
         items(listed, key = { it.id }) { d ->
             val i = all.indexOf(d)
             val after = if (d.id in here) 200 + 80 * i.coerceIn(0, 5) else TRAVEL - 120
@@ -102,7 +119,8 @@ fun Home(
                     if (card) {
                         Column {
                             val held = state.holds(d, mobile) && d.id !in progress
-                            DeliveryCard(d, d.id in onPhone, held, progress[d.id], now, after, onOpen, onInstall, onLaunch, onDownload)
+                            val from = if (computers.size > 1 && filter == null) state.named(d) else null
+                            DeliveryCard(d, state.reviews(d), from, d.id in onPhone, held, progress[d.id], now, after, onOpen, onInstall, onLaunch, onDownload)
                             Spacer(Modifier.height(14.dp))
                         }
                     } else {
@@ -121,11 +139,12 @@ fun Home(
         item(key = "title") {
             Column(Modifier.animateItem()) {
                 Spacer(Modifier.height(28.dp))
+                val one = computers.singleOrNull()
                 TitleBlock(
                     listOf(
                         "Drawing" to "Cloche",
-                        "Host" to (paired?.host ?: "—"),
-                        "Key" to (paired?.fingerprint?.take(9) ?: "—"),
+                        "Host" to (one?.name ?: if (computers.isEmpty()) "—" else "${computers.size} computers"),
+                        "Key" to (one?.fingerprint?.take(9) ?: "—"),
                     ),
                     after = 420,
                 )
@@ -137,32 +156,74 @@ fun Home(
 private val Underway = setOf(Stage.Fetching, Stage.Ready, Stage.Installing)
 
 private fun prominent(ds: List<Delivery>): Set<String> {
-    val newest = ds.groupBy { it.pkg ?: it.id }.values.mapNotNull { g -> g.maxByOrNull { it.seq }?.id }
+    val newest = ds.groupBy { it.pkg ?: it.id }.values.mapNotNull { g -> g.reduceOrNull { a, b -> if (b.newerThan(a)) b else a }?.id }
     return newest.toSet() + ds.filter { it.stage in Underway }.map { it.id }
 }
 
 @Composable
-private fun LinkPanel(link: Link, paired: Paired?, now: Long, pulse: Long?, onTap: () -> Unit) {
+private fun linkWords(link: Link, host: String, now: Long): Triple<String, Color, String> {
     val ink = ink
-    val host = paired?.host ?: "your computer"
-    val (word, color, line) = when (link) {
+    return when (link) {
         is Link.Live -> Triple("Live", ink.live, "Connected since ${clock(link.since)}")
         Link.Connecting -> Triple("Linking", ink.dim, "Connecting to $host")
         Link.NoTailnet -> Triple("No tailnet", ink.redline, "Tailscale is off. Tap to open it.")
-        is Link.Down -> Triple(
-            "Down", ink.redline,
-            "${link.reason}\n${if (link.retry <= now) "Retrying now" else "Retrying in ${(link.retry - now + 999) / 1000}s"}",
-        )
+        is Link.Down -> Triple("Down", ink.redline, "${link.reason}\n${retry(link, now)}")
         Link.Unpaired -> Triple("Unpaired", ink.redline, "Pair to receive builds")
     }
+}
+
+private fun retry(link: Link.Down, now: Long): String {
+    val s = (link.retry - now + 999) / 1000
+    return when {
+        link.retry <= now -> "Retrying now"
+        s >= 120 -> "Retrying in ${s / 60} min"
+        else -> "Retrying in ${s}s"
+    }
+}
+
+@Composable
+private fun LinkPanel(link: Link, each: List<Pair<Computer, Link>>, now: Long, pulse: Long?, onTap: () -> Unit) {
+    val ink = ink
+    val one = each.singleOrNull()?.first
+    val label = one?.name ?: if (each.isEmpty()) null else "${each.size} computers"
     val t = rememberPlot("panel")
     Column(Modifier.fillMaxWidth().press(onClick = onTap).drafted(ink.line.copy(alpha = 0.7f), drawn = { t.value }).padding(14.dp)) {
-        LinkDiagram(link, paired?.host, Modifier.reveal { t.value }, pulse = pulse, after = 320)
+        LinkDiagram(link, label, Modifier.reveal { t.value }, pulse = pulse, after = 320)
         Spacer(Modifier.height(6.dp))
-        Row(Modifier.reveal { t.value }, verticalAlignment = Alignment.Top) {
-            Tag(word, color, filled = link is Link.Live)
-            Spacer(Modifier.width(10.dp))
-            T(line, Type.small, ink.dim, Modifier.weight(1f))
+        if (each.size <= 1 || link == Link.NoTailnet) {
+            val (word, color, line) = linkWords(link, one?.name ?: "your computer", now)
+            Row(Modifier.reveal { t.value }, verticalAlignment = Alignment.Top) {
+                Tag(word, color, filled = link is Link.Live)
+                Spacer(Modifier.width(10.dp))
+                T(line, Type.small, ink.dim, Modifier.weight(1f))
+            }
+        } else {
+            for ((c, l) in each) {
+                val (word, color, line) = linkWords(l, c.name, now)
+                Row(Modifier.reveal { t.value }.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
+                    Tag(word, color, filled = l is Link.Live)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        T(c.name, Type.small, ink.text, maxLines = 1)
+                        if (l !is Link.Live) T(line, Type.small, ink.dim)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Filter(computers: List<Computer>, selected: String?, onSelect: (String?) -> Unit) {
+    val ink = ink
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        val options = listOf<Pair<String?, String>>(null to "All") + computers.map { it.id to it.name }
+        for ((i, o) in options.withIndex()) {
+            if (i > 0) Spacer(Modifier.width(8.dp))
+            val on = o.first == selected
+            Box(Modifier.press(give = 0.94f) { if (!on) onSelect(o.first) }.padding(vertical = 4.dp)) {
+                Tag(o.second, if (on) ink.line else ink.dim, filled = on)
+            }
         }
     }
 }
@@ -205,9 +266,9 @@ private fun Empty(host: String?, modifier: Modifier) {
     }
 }
 
-private fun offer(d: Delivery, hasFile: Boolean, held: Boolean): String? = when {
+private fun offer(d: Delivery, review: Boolean, hasFile: Boolean, held: Boolean): String? = when {
     held -> "download"
-    d.stage == Stage.Ready && !d.fresh -> "install"
+    d.stage == Stage.Ready && !review -> "install"
     d.stage == Stage.Installing && d.asking -> "install"
     d.stage == Stage.Ready -> "review"
     (d.stage == Stage.Failed || d.stage == Stage.Declined) && hasFile -> "retry"
@@ -218,6 +279,8 @@ private fun offer(d: Delivery, hasFile: Boolean, held: Boolean): String? = when 
 @Composable
 private fun DeliveryCard(
     d: Delivery,
+    review: Boolean,
+    from: String?,
     here: Boolean,
     held: Boolean,
     progress: Float?,
@@ -254,7 +317,7 @@ private fun DeliveryCard(
                 if (d.stage == Stage.Installed) {
                     Stamp(word, color, thump = first != Stage.Installed)
                 } else {
-                    Tag(word, color, filled = d.stage == Stage.Ready && !d.fresh)
+                    Tag(word, color, filled = d.stage == Stage.Ready && !review)
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -264,9 +327,9 @@ private fun DeliveryCard(
                 Spacer(Modifier.height(4.dp))
                 T("“${d.m.note}”", Type.body)
             }
-            d.m.source?.let {
+            listOfNotNull(d.m.source?.described, from?.let { "from $it" }).takeIf { it.isNotEmpty() }?.let {
                 Spacer(Modifier.height(2.dp))
-                T(it.described, Type.small, ink.faint, maxLines = 1)
+                T(it.joinToString(" · "), Type.small, ink.faint, maxLines = 1)
             }
             if (d.detail.isNotEmpty() && d.stage in setOf(Stage.Blocked, Stage.Failed, Stage.Declined)) {
                 Spacer(Modifier.height(6.dp))
@@ -289,11 +352,11 @@ private fun DeliveryCard(
                 }
                 else -> Dimension("${mb(d.m.file.size)} · ${if (here) "on phone" else "not on phone"}", file = here)
             }
-            AnimatedContent(offer(d, here, held), transitionSpec = { swap() }, label = "offer") { o ->
+            AnimatedContent(offer(d, review, here, held), transitionSpec = { swap() }, label = "offer") { o ->
                 when (o) {
                     "download" -> Action { PlotButton("Download now", { onDownload(d.id) }, Modifier.fillMaxWidth(), primary = false) }
                     "install" -> Action { PlotButton("Install", { onInstall(d.id) }, Modifier.fillMaxWidth()) }
-                    "review" -> Action { PlotButton("Review new app", { onOpen(d.id) }, Modifier.fillMaxWidth(), primary = false) }
+                    "review" -> Action { PlotButton(if (d.fresh) "Review new app" else "Review", { onOpen(d.id) }, Modifier.fillMaxWidth(), primary = false) }
                     "retry" -> Action { PlotButton("Try again", { onInstall(d.id) }, Modifier.fillMaxWidth(), primary = false) }
                     "open" -> Action { PlotButton("Open", { d.pkg?.let(onLaunch) }, Modifier.fillMaxWidth(), primary = false) }
                     else -> Box(Modifier.fillMaxWidth())

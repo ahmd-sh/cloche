@@ -10,8 +10,8 @@ import sh.ahmd.cloche.deliver.Policy
 import sh.ahmd.cloche.link.FileInfo
 import sh.ahmd.cloche.link.Manifest
 import sh.ahmd.cloche.store.Apk
+import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.Delivery
-import sh.ahmd.cloche.store.Paired
 import sh.ahmd.cloche.store.Pin
 import sh.ahmd.cloche.store.Saved
 import sh.ahmd.cloche.store.Stage
@@ -60,9 +60,9 @@ class PolicyTest {
     }
 
     @Test
-    fun paired() {
-        assertTrue(Paired("m", "127.0.0.1:41778", "", "", "", 0).loopback)
-        assertFalse(Paired("m", "100.101.102.103:41778", "", "", "", 0).loopback)
+    fun loopback() {
+        assertTrue(Computer("a", "m", "127.0.0.1:41778", "", "", "", 0).loopback)
+        assertFalse(Computer("a", "m", "100.101.102.103:41778", "", "", "", 0).loopback)
     }
 
     @get:Rule
@@ -73,11 +73,13 @@ class PolicyTest {
         val f = File(tmp.root, "state.json")
         val s = Store(f)
         val m = Manifest(1, "abc", 3, "mac", "2026-11-04T18:00:00Z", FileInfo("a.apk", 10, "00"))
-        s.update { it.copy(cursor = 3, deliveries = listOf(Delivery("abc", 3, m, Stage.Fetching, received = 1, changed = 1))) }
+        val c = Computer("c1", "mac", "100.101.102.103:41778", "", "", "", 0, cursor = 3)
+        s.update { it.copy(computers = listOf(c), deliveries = listOf(Delivery("abc", 3, m, Stage.Fetching, received = 1, changed = 1, from = "c1"))) }
         s.change("abc") { it.copy(stage = Stage.Ready, apk = apk) }
         s.flush()
         val again = Store(f).value
-        assertEquals(3L, again.cursor)
+        assertEquals(3L, again.computer("c1")?.cursor)
+        assertEquals("c1", again.delivery("abc")?.from)
         assertEquals(Stage.Ready, again.delivery("abc")?.stage)
         assertEquals("wallflower", again.delivery("abc")?.label)
     }
@@ -97,6 +99,6 @@ class PolicyTest {
     @Test
     fun storeStartsOverFromAnUnreadableFile() {
         val f = File(tmp.root, "state.json").apply { writeText("{not json") }
-        assertEquals(0L, Store(f).value.cursor)
+        assertTrue(Store(f).value.computers.isEmpty())
     }
 }

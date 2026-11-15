@@ -38,7 +38,6 @@ import sh.ahmd.cloche.deliver.Installer
 import sh.ahmd.cloche.deliver.Shelf
 import sh.ahmd.cloche.link.LinkService
 import sh.ahmd.cloche.link.PairTicket
-import sh.ahmd.cloche.link.Watchdog
 import sh.ahmd.cloche.ui.Checks
 import sh.ahmd.cloche.ui.ClocheApp
 import sh.ahmd.cloche.ui.Haptics
@@ -128,7 +127,7 @@ class MainActivity : ComponentActivity(), Host {
     override fun onStart() {
         super.onStart()
         app.visible = true
-        if (app.store.value.paired != null) LinkService.start(this) else app.kick()
+        if (app.store.value.computers.isNotEmpty()) LinkService.start(this) else app.kick()
     }
 
     override fun onResume() {
@@ -198,10 +197,12 @@ class MainActivity : ComponentActivity(), Host {
         }
     }
 
-    override fun unpair() {
-        app.store.update { it.copy(paired = null, cursor = 0, unpaired = null) }
-        stopService(Intent(this, LinkService::class.java))
-        Watchdog.cancel(this)
+    override fun unpair(id: String) {
+        app.forget(id)
+        if (app.store.value.computers.isEmpty()) {
+            app.store.update { it.copy(unpaired = null) }
+            stopService(Intent(this, LinkService::class.java))
+        }
     }
 
     override fun checks() = Checks(

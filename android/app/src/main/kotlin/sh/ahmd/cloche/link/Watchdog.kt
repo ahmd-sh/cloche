@@ -13,7 +13,7 @@ class Watchdog : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val app = cloche
         when {
-            app.store.value.paired == null -> cancel(this)
+            app.store.value.computers.isEmpty() -> cancel(this)
             LinkService.running -> app.kick()
             else -> runCatching { LinkService.start(this) }.onFailure { Log.i("cloche", "watchdog: can't start the link from here: ${it.message}") }
         }

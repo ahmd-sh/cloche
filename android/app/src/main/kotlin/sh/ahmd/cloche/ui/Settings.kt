@@ -38,8 +38,14 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import sh.ahmd.cloche.BuildConfig
 import sh.ahmd.cloche.deliver.Kept
+import sh.ahmd.cloche.link.Link
+import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.Saved
 
 data class Checks(val notifications: Boolean, val installs: Boolean, val battery: Boolean, val tailnet: Boolean) {
@@ -69,16 +75,22 @@ private val AfterInstall = listOf(0 to "Delete file", 1 to "Keep file")
 
 private val Keep = listOf(0 to "Never", 1 to "1 day", 7 to "1 week", 30 to "1 month")
 
+private val Updates = listOf(0 to "One tap", 1 to "Review first")
+
 @Composable
 fun SettingsScreen(
     state: Saved,
+    links: Map<String, Link>,
     checks: Checks,
     kept: Kept,
     padding: PaddingValues,
+    now: Long,
     onBack: () -> Unit,
     onFix: (String) -> Unit,
-    onPairAgain: () -> Unit,
-    onUnpair: () -> Unit,
+    onPairAnother: () -> Unit,
+    onUnpair: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onReview: (String, Boolean) -> Unit,
     onForget: (String) -> Unit,
     onClearAfter: (Int) -> Unit,
     onKeepInstalled: (Boolean) -> Unit,
@@ -96,25 +108,20 @@ fun SettingsScreen(
         for (need in Needs) Check(need, checks.met(need.key), onFix)
         Spacer(Modifier.height(18.dp))
 
-        val paired = state.paired
-        Rule("Computer", after = 160)
+        Rule("Computers", right = state.computers.size.takeIf { it > 1 }?.toString(), after = 160)
         Spacer(Modifier.height(6.dp))
-        if (paired != null) {
-            Spec("Host", paired.host)
-            Spec("Address", paired.addr)
-            Spec("Key", paired.fingerprint, note = "as cloche status shows it")
-            Spec("Paired", clock(paired.pairedAt), note = "as ${paired.device}")
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PlotButton("Pair again", onPairAgain, Modifier.weight(1f), primary = false)
-                PlotButton(
-                    if (arm.armed == "unpair") "Tap again" else "Unpair",
-                    { arm.tap("unpair", onUnpair) },
-                    Modifier.weight(1f), primary = false, danger = true, quiet = true,
-                    fuse = { arm.fuse("unpair") },
-                )
+        for ((i, c) in state.computers.withIndex()) {
+            if (i > 0) {
+                Spacer(Modifier.height(14.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(ink.line.copy(alpha = 0.25f)))
+                Spacer(Modifier.height(8.dp))
             }
+            ComputerBlock(c, links[c.id], now, arm, onRename, onReview, onUnpair)
         }
+        Spacer(Modifier.height(14.dp))
+        PlotButton("Pair another computer", onPairAnother, Modifier.fillMaxWidth(), primary = false)
+        Spacer(Modifier.height(10.dp))
+        T(TRUST, Type.small, ink.faint)
         Spacer(Modifier.height(22.dp))
 
         Rule("Downloads", after = 200)
@@ -167,12 +174,59 @@ fun SettingsScreen(
         Rule("About", after = 340)
         Spacer(Modifier.height(8.dp))
         T(
-            "Cloche ${BuildConfig.VERSION_NAME} delivers builds from your computer to this phone over Tailscale. " +
-                "Each build is signed by your computer and verified by Cloche before you can install it. " +
+            "Cloche ${BuildConfig.VERSION_NAME} delivers builds from your computers to this phone over Tailscale. " +
+                "Each build is signed by the computer that sent it and verified by Cloche before you can install it. " +
                 "Updates must be signed with the same key as the app they replace.",
             Type.small, ink.faint,
         )
     }
+}
+
+@Composable
+private fun ComputerBlock(
+    c: Computer,
+    link: Link?,
+    now: Long,
+    arm: Arm,
+    onRename: (String, String) -> Unit,
+    onReview: (String, Boolean) -> Unit,
+    onUnpair: (String) -> Unit,
+) {
+    val ink = ink
+    var draft by remember(c.id, c.nickname) { mutableStateOf(c.nickname) }
+    val seen = when (link) {
+        is Link.Live -> "connected since ${clock(link.since)}"
+        is Link.Down -> link.reason
+        Link.NoTailnet -> "Tailscale is off"
+        else -> if (c.seen > 0) "last answered ${ago(now, c.seen)}" else "connecting"
+    }
+    Field(
+        "Name", draft, { draft = it.take(40) }, c.offered.ifEmpty { c.host },
+        KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+        onDone = { if (draft != c.nickname) onRename(c.id, draft) },
+    )
+    Spec("Machine", c.host, note = c.offered.takeIf { it.isNotEmpty() && it != c.host }?.let { "calls itself $it" })
+    Spec("Link", seen, valueColor = if (link is Link.Down || link == Link.NoTailnet) ink.redline else ink.text)
+    Spec("Address", c.addr)
+    Spec("Key", c.fingerprint, note = "as cloche status shows it")
+    Spec("Paired", clock(c.pairedAt), note = "as ${c.device}")
+    Spacer(Modifier.height(10.dp))
+    Label("Updates from it", ink.dim)
+    Spacer(Modifier.height(8.dp))
+    Choice(Updates, if (c.review) 1 else 0) { onReview(c.id, it == 1) }
+    Spacer(Modifier.height(6.dp))
+    T(
+        if (c.review) "Every build opens for review before it installs." else "An update to an app it installed before takes one tap from the notification. New apps open for review.",
+        Type.small, ink.faint,
+    )
+    Spacer(Modifier.height(10.dp))
+    val key = "unpair:${c.id}"
+    PlotButton(
+        if (arm.armed == key) "Tap again" else "Unpair ${c.name}",
+        { arm.tap(key) { onUnpair(c.id) } },
+        Modifier.fillMaxWidth(), primary = false, danger = true, quiet = true,
+        fuse = { arm.fuse(key) },
+    )
 }
 
 @Composable
@@ -209,7 +263,7 @@ private fun Check(need: Need, ok: Boolean, onFix: (String) -> Unit) {
 }
 
 @Composable
-private fun Choice(options: List<Pair<Int, String>>, selected: Int, onSelect: (Int) -> Unit) {
+fun Choice(options: List<Pair<Int, String>>, selected: Int, onSelect: (Int) -> Unit) {
     val ink = ink
     val haptics = haptics()
     val index = options.indexOfFirst { it.first == selected }.coerceAtLeast(0)

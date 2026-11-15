@@ -23,7 +23,8 @@ import sh.ahmd.cloche.link.Result
 import sh.ahmd.cloche.link.Signed
 import sh.ahmd.cloche.link.sha256
 import sh.ahmd.cloche.store.Delivery
-import sh.ahmd.cloche.store.Paired
+import sh.ahmd.cloche.store.Computer
+import sh.ahmd.cloche.store.Saved
 import sh.ahmd.cloche.store.Stage
 import java.io.IOException
 
@@ -53,48 +54,55 @@ class Pipeline(private val app: Cloche) {
         looks.trySend(Unit)
     }
 
-    fun received(paired: Paired, inbox: Inbox): Boolean {
+    fun received(c: Computer, inbox: Inbox): Boolean {
         val now = System.currentTimeMillis()
         var rejected = 0
         val fresh = mutableListOf<Delivery>()
         for (sd in inbox.deliveries) {
-            val m = Signed.open(paired.keyBytes, sd)
+            val m = Signed.open(c.keyBytes, sd)
             if (m == null || !DELIVERY_ID.matches(m.id)) {
                 rejected++
                 continue
             }
             if (store.value.delivery(m.id) != null || fresh.any { it.id == m.id }) continue
-            fresh += Delivery(id = m.id, seq = m.seq, m = m, stage = Stage.Fetching, received = now, changed = now)
+            fresh += Delivery(id = m.id, from = c.id, seq = m.seq, m = m, stage = Stage.Fetching, received = now, changed = now)
         }
         val before = store.value.deliveries
         val after = store.update { s ->
-            s.copy(cursor = inbox.head, deliveries = trim(fresh.sortedByDescending { it.seq } + s.deliveries))
+            if (s.computer(c.id) == null) return@update s
+            val next = s.change(c.id) { it.copy(cursor = inbox.head, offered = inbox.name, seen = if (now - it.seen > SEEN) now else it.seen) }
+            next.copy(deliveries = trim(next, fresh.sortedByDescending { it.seq } + s.deliveries))
         }
         val kept = after.deliveries.mapTo(HashSet()) { it.id }
         before.filter { it.id !in kept }.forEach { drop(it.id) }
-        if (rejected > 0) app.notices.rejected(paired.host, rejected)
+        if (rejected > 0) app.notices.rejected(c.name, rejected)
         return fresh.isNotEmpty()
     }
 
-    private fun trim(ds: List<Delivery>): List<Delivery> {
+    private fun trim(s: Saved, ds: List<Delivery>): List<Delivery> {
         var over = ds.size - KEEP
         if (over <= 0) return ds
         val gone = HashSet<String>()
         for (d in ds.asReversed()) {
             if (over <= 0) break
             val busy = d.stage == Stage.Fetching || d.stage == Stage.Ready || d.stage == Stage.Installing
-            if (busy || (d.stage.wire != null && d.reported != d.stage)) continue
+            if (busy || s.owed(d)) continue
             gone += d.id
             over--
         }
         return ds.filter { it.id !in gone }
     }
 
-    fun pending(): Boolean = store.value.deliveries.any { it.stage == Stage.Fetching || (it.stage.wire != null && it.reported != it.stage) }
+    fun pending(id: String): Boolean = store.value.let { s -> s.deliveries.any { it.from == id && (it.stage == Stage.Fetching || s.owed(it)) } }
 
-    suspend fun work(api: Api) {
-        for (d in store.value.deliveries.filter { it.stage == Stage.Fetching }.sortedBy { it.seq }) fetch(api, d)
-        report(api)
+    suspend fun work(c: Computer, api: Api) {
+        for (d in store.value.deliveries.filter { it.from == c.id && it.stage == Stage.Fetching }.sortedBy { it.seq }) fetch(api, d)
+        report(c, api)
+    }
+
+    fun forgotten(id: String) {
+        for (d in store.value.deliveries) if (d.from == id && d.stage == Stage.Failed) app.notices.cancel(d)
+        store.update { s -> s.copy(deliveries = s.deliveries.filterNot { it.cleared && !s.owed(it) }) }
     }
 
     private suspend fun fetch(api: Api, d: Delivery) {
@@ -148,7 +156,7 @@ class Pipeline(private val app: Cloche) {
             return
         }
         val others = store.value.deliveries.filter { it.id != d.id && it.pkg == read.pkg && it.stage == Stage.Ready }
-        if (others.any { it.seq > d.seq }) {
+        if (others.any { it.newerThan(d) }) {
             supersede(d.id)
             return
         }
@@ -183,8 +191,9 @@ class Pipeline(private val app: Cloche) {
         store.change(id) { it.copy(stage = Stage.Superseded, detail = "a newer build arrived") }
     }
 
-    suspend fun report(api: Api) {
+    suspend fun report(c: Computer, api: Api) {
         for (d in store.value.deliveries) {
+            if (d.from != c.id) continue
             val wire = d.stage.wire ?: continue
             if (d.reported == d.stage) continue
             val apk = d.apk
@@ -200,7 +209,7 @@ class Pipeline(private val app: Cloche) {
             }
             store.update { s -> s.copy(deliveries = s.deliveries.map { if (it.id == d.id) it.copy(reported = d.stage) else it }) }
         }
-        store.update { s -> s.copy(deliveries = s.deliveries.filterNot { it.cleared && it.reported == it.stage }) }
+        store.update { s -> s.copy(deliveries = s.deliveries.filterNot { it.cleared && !s.owed(it) }) }
     }
 
     fun clear(ids: Collection<String>) {
@@ -214,7 +223,7 @@ class Pipeline(private val app: Cloche) {
                     if (d.id !in ids || !d.clearable) return@mapNotNull d
                     gone += d
                     val e = if (d.stage == Stage.Ready) d.copy(stage = Stage.Declined, detail = "cleared on the phone", changed = now) else d
-                    if (e.reported == e.stage) null else e.copy(cleared = true)
+                    if (s.owed(e)) e.copy(cleared = true) else null
                 },
             )
         }
@@ -222,7 +231,7 @@ class Pipeline(private val app: Cloche) {
             app.notices.cancel(d)
             drop(d.id)
         }
-        if (pending()) app.work.trySend(Unit)
+        app.work.trySend(Unit)
     }
 
     suspend fun tidy(now: Long = System.currentTimeMillis()) {
@@ -289,6 +298,7 @@ class Pipeline(private val app: Cloche) {
         const val KEEP = 100
         const val MAX_TRIES = 8
         const val DAY = 86_400_000L
+        const val SEEN = 600_000L
         val DELIVERY_ID = Regex("[a-z2-7]{8}")
     }
 }

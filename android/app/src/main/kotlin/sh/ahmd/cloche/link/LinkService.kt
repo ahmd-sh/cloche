@@ -14,23 +14,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import sh.ahmd.cloche.Cloche
 import sh.ahmd.cloche.cloche
 import sh.ahmd.cloche.notify.Notices
-import sh.ahmd.cloche.store.Paired
+import sh.ahmd.cloche.store.Computer
 import java.io.EOFException
 import java.net.ConnectException
 import java.net.ProtocolException
@@ -43,8 +46,17 @@ class LinkService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var app: Cloche
     private var foreground = false
-    private var polling: Job? = null
-    private var working: Job? = null
+    private var watching: Job? = null
+    private var dispatching: Job? = null
+    private val stations = HashMap<String, Station>()
+
+    private class Station(val poll: Job, val work: Job, val wake: Channel<Unit>) {
+        fun stop() {
+            poll.cancel()
+            work.cancel()
+            wake.close()
+        }
+    }
 
     override fun onBind(intent: Intent?) = null
 
@@ -55,21 +67,20 @@ class LinkService : Service() {
         instance = this
         val nm = getSystemService(NotificationManager::class.java)
         scope.launch {
-            app.link
-                .mapNotNull { it.up }
+            combine(app.links, app.store.state) { links, s -> Links.up(s.computers, links) to Links.title(s.computers, links) }
                 .distinctUntilChanged()
-                .transformLatest { up ->
-                    if (!up) delay(GRACE)
-                    emit(up)
+                .transformLatest { (up, title) ->
+                    if (up == false) delay(GRACE)
+                    emit(title)
                 }
                 .distinctUntilChanged()
-                .collect { if (foreground) nm.notify(Notices.LINK_ID, app.notices.link(app.link.value, app.store.value.paired)) }
+                .collect { if (foreground) nm.notify(Notices.LINK_ID, app.notices.link()) }
         }
         scope.launch { app.tailnet.mobile.collect { if (!it) app.work.trySend(Unit) } }
         scope.launch {
             while (true) {
                 app.pipeline.tidy()
-                delay(HOUR)
+                delay(Links.HOUR)
             }
         }
     }
@@ -77,7 +88,7 @@ class LinkService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!foreground) {
             try {
-                startForeground(Notices.LINK_ID, app.notices.link(app.link.value, app.store.value.paired), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                startForeground(Notices.LINK_ID, app.notices.link(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
                 foreground = true
             } catch (e: Exception) {
                 Log.w(TAG, "can't keep the link from here", e)
@@ -91,105 +102,121 @@ class LinkService : Service() {
     }
 
     private fun ensure() {
-        if (polling?.isActive != true) polling = scope.launch { poll() }
-        if (working?.isActive != true) working = scope.launch { work() }
+        if (watching?.isActive != true) watching = scope.launch { watch() }
+        if (dispatching?.isActive != true) dispatching = scope.launch { for (signal in app.work) stations.values.forEach { it.wake.trySend(Unit) } }
         app.kick()
     }
 
     override fun onDestroy() {
         instance = null
+        stations.values.forEach { it.stop() }
+        stations.clear()
         scope.cancel()
         super.onDestroy()
     }
 
-    private suspend fun poll() {
+    private suspend fun watch() {
+        app.store.state.map { s -> s.computers.map { it.id } }.distinctUntilChanged().collect { ids ->
+            for (id in stations.keys - ids.toSet()) stations.remove(id)?.stop()
+            app.links.update { links -> links.filterKeys { it in ids } }
+            if (ids.isEmpty()) {
+                stopSelf()
+                return@collect
+            }
+            for (id in ids) {
+                if (id in stations) continue
+                val wake = Channel<Unit>(Channel.CONFLATED)
+                stations[id] = Station(scope.launch { poll(id) }, scope.launch { work(id, wake) }, wake)
+                wake.trySend(Unit)
+            }
+        }
+    }
+
+    private fun set(id: String, link: Link) {
+        app.links.update { if (app.store.value.computer(id) != null) it + (id to link) else it - id }
+    }
+
+    private suspend fun poll(id: String) {
         var failures = 0
         var downSince = 0L
         var liveSince = 0L
         var answered = false
         fun live() {
             if (liveSince == 0L) liveSince = System.currentTimeMillis()
-            app.link.value = Link.Live(liveSince)
+            set(id, Link.Live(liveSince))
         }
         while (true) {
-            val paired = app.store.value.paired
-            if (paired == null) {
-                app.link.value = Link.Unpaired
-                stopSelf()
-                return
-            }
-            val net = if (paired.loopback) null else app.tailnet.vpn.value
-            if (!paired.loopback && net == null) {
-                app.link.value = Link.NoTailnet
+            val c = app.store.value.computer(id) ?: return
+            val net = if (c.loopback) null else app.tailnet.vpn.value
+            if (!c.loopback && net == null) {
+                set(id, Link.NoTailnet)
                 liveSince = 0
                 answered = false
                 app.tailnet.vpn.first { it != null }
                 continue
             }
-            if (app.link.value !is Link.Live && app.link.value !is Link.Down) app.link.value = Link.Connecting
-            val api = Api(net, paired.addr, app.secrets.open(paired.secret))
+            val now = app.links.value[id]
+            if (now !is Link.Live && now !is Link.Down) set(id, Link.Connecting)
+            val api = Api(net, c.addr, app.secrets.open(c.secret))
             try {
-                val inbox = whileSame(net, paired) {
-                    api.inbox(app.store.value.cursor, if (answered) WAIT else 0) { if (answered) live() }
+                val inbox = whileSame(net, c) {
+                    api.inbox(c.cursor, if (answered) WAIT else 0) { if (answered) live() }
                 } ?: continue
                 answered = true
                 live()
                 failures = 0
                 downSince = 0
-                app.pipeline.received(paired, inbox)
-                if (app.pipeline.pending()) app.work.trySend(Unit)
+                app.pipeline.received(c, inbox)
+                if (app.pipeline.pending(id)) stations[id]?.wake?.trySend(Unit)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Api.Unpaired) {
-                if (app.store.value.paired != paired) continue
-                app.store.update { it.copy(paired = null, unpaired = e.message) }
-                app.notices.unpaired(paired.host)
-                app.link.value = Link.Unpaired
-                Watchdog.cancel(this)
-                stopSelf()
+                if (!c.sameLink(app.store.value.computer(id))) continue
+                app.forget(id, e.message)
                 return
             } catch (e: Exception) {
                 liveSince = 0
                 answered = false
                 failures++
-                if (downSince == 0L) downSince = System.currentTimeMillis()
-                val wait = BACKOFF[minOf(failures - 1, BACKOFF.lastIndex)] * 1000L
-                app.link.value = Link.Down(reason(e), downSince, System.currentTimeMillis() + wait)
-                withTimeoutOrNull(wait) { merge(app.kicks.receiveAsFlow(), app.tailnet.vpn.drop(1)).first() }
+                val at = System.currentTimeMillis()
+                if (downSince == 0L) downSince = at
+                val wait = Links.backoff(failures, at - downSince)
+                set(id, Link.Down(reason(e), downSince, at + wait))
+                withTimeoutOrNull(wait) { merge(app.kicks, app.tailnet.vpn.drop(1)).first() }
             }
         }
     }
 
-    private suspend fun work() {
+    private suspend fun work(id: String, wake: Channel<Unit>) {
         var failures = 0
-        for (signal in app.work) {
-            val paired = app.store.value.paired ?: continue
-            val net = if (paired.loopback) null else app.tailnet.vpn.value ?: continue
+        for (signal in wake) {
+            val c = app.store.value.computer(id) ?: return
+            if (!app.pipeline.pending(id)) continue
+            val net = if (c.loopback) null else app.tailnet.vpn.value ?: continue
             try {
-                app.pipeline.work(Api(net, paired.addr, app.secrets.open(paired.secret)))
+                app.pipeline.work(c, Api(net, c.addr, app.secrets.open(c.secret)))
                 failures = 0
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 failures++
-                Log.i(TAG, "work: ${e.message}")
+                Log.i(TAG, "work for ${c.name}: ${e.message}")
                 if (e !is Api.Unpaired) {
-                    val wait = BACKOFF[minOf(failures - 1, BACKOFF.lastIndex)] * 1000L
                     scope.launch {
-                        delay(wait)
-                        app.work.trySend(Unit)
+                        delay(Links.backoff(failures, 0))
+                        wake.trySend(Unit)
                     }
                 }
             }
         }
     }
 
-    private suspend fun <T> whileSame(net: Network?, paired: Paired, block: suspend () -> T): T? = coroutineScope {
+    private suspend fun <T> whileSame(net: Network?, c: Computer, block: suspend () -> T): T? = coroutineScope {
         val job = async { block() }
         val watch = launch {
             merge(
                 app.tailnet.vpn.mapNotNull { if (net != null && it != net) Unit else null },
-                app.store.state.mapNotNull { if (it.paired != paired) Unit else null },
+                app.store.state.mapNotNull { if (!c.sameLink(it.computer(c.id))) Unit else null },
             ).first()
             job.cancel()
         }
@@ -206,10 +233,8 @@ class LinkService : Service() {
     companion object {
         private const val TAG = "cloche"
         const val WAIT = 270
-        private val BACKOFF = longArrayOf(1, 2, 5, 10, 20, 30, 60)
 
         private const val GRACE = 20_000L
-        private const val HOUR = 3_600_000L
 
         @Volatile private var instance: LinkService? = null
 
@@ -234,15 +259,8 @@ class LinkService : Service() {
 class BootReceiver : android.content.BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED && intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        if (context.cloche.store.value.paired != null) {
+        if (context.cloche.store.value.computers.isNotEmpty()) {
             runCatching { LinkService.start(context) }.onFailure { Log.w("cloche", "couldn't start the link", it) }
         }
     }
 }
-
-private val Link.up: Boolean?
-    get() = when (this) {
-        is Link.Live -> true
-        is Link.Down, Link.NoTailnet -> false
-        Link.Connecting, Link.Unpaired -> null
-    }

@@ -82,7 +82,7 @@ fun Detail(
                 if (d.stage == Stage.Installed) {
                     Stamp(word, color, thump = first != Stage.Installed)
                 } else {
-                    Tag(word, color, filled = d.stage == Stage.Ready && !d.fresh)
+                    Tag(word, color, filled = d.stage == Stage.Ready && !state.reviews(d))
                 }
             }
         }
@@ -179,7 +179,13 @@ fun Detail(
         Spacer(Modifier.height(14.dp))
         Rule("Origin", plot = "origin:$id", after = next())
         Spacer(Modifier.height(6.dp))
-        Reveal("$id:${line}", next()) { Spec("Computer", d.m.host, note = state.paired?.let { "signed by ${it.fingerprint}" }) }
+        val from = state.from(d)
+        Reveal("$id:${line}", next()) {
+            Spec(
+                "Computer", state.named(d),
+                note = from?.let { c -> listOfNotNull(c.host.takeIf { it != c.name }, "signed by ${c.fingerprint}").joinToString(" · ") } ?: "no longer paired",
+            )
+        }
         d.m.source?.let { Reveal("$id:${line}", next()) { Spec("Source", it.described, note = it.dir) } }
         Reveal("$id:${line}", next()) { Spec("Pushed", clock(d.m.pushed), note = "received ${ago(now, d.received)}") }
         Reveal("$id:${line}", next()) { Spec("Delivery", "#${d.seq}", note = "as cloche status numbers it") }

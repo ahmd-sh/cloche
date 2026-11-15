@@ -41,14 +41,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import java.security.MessageDigest
 import sh.ahmd.cloche.Cloche
 import sh.ahmd.cloche.link.Api
 import sh.ahmd.cloche.link.Link
 import sh.ahmd.cloche.link.LinkService
 import sh.ahmd.cloche.link.PairTicket
 import sh.ahmd.cloche.link.Pairing
-import sh.ahmd.cloche.link.sha256
 import sh.ahmd.cloche.store.Delivery
 import sh.ahmd.cloche.store.Stage
 
@@ -63,7 +61,7 @@ interface Host {
     fun showFiles()
     fun fix(what: String)
     fun paired()
-    fun unpair()
+    fun unpair(id: String)
     fun checks(): Checks
 }
 
@@ -84,8 +82,9 @@ fun ClocheApp(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int) {
     val haptics = remember(view) { Haptics(view) }
     val plotted = remember { Plotted() }
     val offline by remember {
-        combine(app.tailnet.vpn, app.store.state) { vpn, s -> vpn == null && s.paired?.loopback != true }.distinctUntilChanged()
-    }.collectAsStateWithLifecycle(app.tailnet.vpn.value == null && app.store.value.paired?.loopback != true)
+        combine(app.tailnet.vpn, app.store.state) { vpn, s -> vpn == null && (s.computers.isEmpty() || s.computers.any { !it.loopback }) }
+            .distinctUntilChanged()
+    }.collectAsStateWithLifecycle(app.tailnet.vpn.value == null)
     ClocheTheme(offline) {
         CompositionLocalProvider(LocalHaptics provides haptics, LocalPlotted provides plotted) {
             Sheets(app, opened, host, resumes, haptics)
@@ -97,14 +96,14 @@ fun ClocheApp(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int) {
 private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, haptics: Haptics) {
     val ink = ink
     val state by app.store.state.collectAsStateWithLifecycle()
-    val link by app.link.collectAsStateWithLifecycle()
+    val links by app.links.collectAsStateWithLifecycle()
     val progress by app.pipeline.progress.collectAsStateWithLifecycle()
     val vpn by app.tailnet.vpn.collectAsStateWithLifecycle()
     val mobile by app.tailnet.mobile.collectAsStateWithLifecycle()
-    val fast = link is Link.Down || state.deliveries.any { System.currentTimeMillis() - it.received < 90_000 }
+    val fast = links.values.any { it is Link.Down } || state.deliveries.any { System.currentTimeMillis() - it.received < 90_000 }
     val now = rememberNow(if (fast) 1000 else 30_000)
     val scope = rememberCoroutineScope()
-    val checks = remember(resumes, vpn, state.paired) { host.checks() }
+    val checks = remember(resumes, vpn, state.computers.size) { host.checks() }
     val kept by app.pipeline.kept.collectAsStateWithLifecycle()
     val list = rememberLazyListState()
 
@@ -123,7 +122,7 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
                     screen = "build:${o.id}"
                     val d = app.store.value.delivery(o.id)
                     val asking = d?.stage == Stage.Installing && d.asking
-                    if (o.install && d != null && ((d.stage == Stage.Ready && !d.fresh) || asking)) host.install(o.id)
+                    if (o.install && d != null && ((d.stage == Stage.Ready && !app.store.value.reviews(d)) || asking)) host.install(o.id)
                     if (o.download && d != null && d.stage == Stage.Fetching) app.pipeline.downloadNow(o.id)
                 }
                 is Opened.Pair -> {
@@ -135,13 +134,12 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
         }
     }
 
-    fun pair(t: PairTicket) = scope.launch {
-        firstPairing = state.paired == null
+    fun pair(t: PairTicket, name: String, replace: String?) = scope.launch {
+        firstPairing = state.computers.isEmpty()
         pairing = true
         pairError = null
         try {
-            Pairing.pair(app, t)
-            celebrating = app.store.value.paired?.fingerprint.orEmpty()
+            celebrating = Pairing.pair(app, t, name, replace).fingerprint
             haptics.lock()
             delay(haptics.rise + 900L)
             firstPairing = false
@@ -166,7 +164,7 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
         }
     }
 
-    val key = if (state.paired == null || firstPairing) FIRST else screen
+    val key = if (state.computers.isEmpty() || firstPairing) FIRST else screen
     Feel(state.deliveries, haptics, key)
     fun clear(ids: List<String>) {
         app.pipeline.clear(ids)
@@ -205,7 +203,7 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
                 when {
                     k == FIRST || k == "pair" -> PairScreen(
                         ticket, state.unpaired, pairing, celebrating, pairError, pairErrors, vpn != null,
-                        replaces = state.paired?.takeUnless { p -> ticket?.fingerprint?.let { MessageDigest.isEqual(it, sha256(p.keyBytes)) } == true }?.host,
+                        computers = state.computers,
                         padding = padding, onPair = ::pair,
                         onBack = if (k == FIRST) null else back,
                     )
@@ -221,11 +219,17 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
                     }
                     k == "settings" -> {
                         SettingsScreen(
-                            state, checks, kept, padding,
+                            state, links, checks, kept, padding, now,
                             onBack = back,
                             onFix = host::fix,
-                            onPairAgain = { screen = "pair" },
-                            onUnpair = { host.unpair(); screen = "home" },
+                            onPairAnother = {
+                                ticket = null
+                                pairError = null
+                                screen = "pair"
+                            },
+                            onUnpair = { id -> host.unpair(id) },
+                            onRename = { id, name -> app.store.update { s -> s.change(id) { it.copy(nickname = name.trim().take(40).takeUnless { n -> n == it.offered.ifEmpty { it.host } }.orEmpty()) } } },
+                            onReview = { id, on -> app.store.update { s -> s.change(id) { it.copy(review = on) } } },
                             onForget = { pkg -> app.store.update { st -> st.copy(pins = st.pins.filter { it.pkg != pkg }) } },
                             onClearAfter = { days ->
                                 app.store.update { it.copy(clearAfter = days) }
@@ -243,7 +247,7 @@ private fun Sheets(app: Cloche, opened: Flow<Opened>, host: Host, resumes: Int, 
                         )
                     }
                     else -> Home(
-                        state, link, checks, mobile, kept.apks, progress, now, padding, list,
+                        state, links, checks, mobile, kept.apks, progress, now, padding, list,
                         onOpen = { screen = "build:$it" },
                         onInstall = host::install,
                         onLaunch = host::launch,

@@ -4,6 +4,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -12,7 +13,7 @@ import javax.crypto.spec.GCMParameterSpec
 class Secrets {
     private val alias = "cloche.secret"
 
-    @Volatile private var opened: Pair<String, String>? = null
+    private val opened = ConcurrentHashMap<String, String>()
 
     fun seal(plain: String): String {
         val c = Cipher.getInstance(TRANSFORM)
@@ -21,12 +22,13 @@ class Secrets {
     }
 
     fun open(sealed: String): String {
-        opened?.let { (s, p) -> if (s == sealed) return p }
+        opened[sealed]?.let { return it }
         val b = Base64.getDecoder().decode(sealed)
         val c = Cipher.getInstance(TRANSFORM)
         c.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, b, 0, 12))
         val plain = c.doFinal(b, 12, b.size - 12).decodeToString()
-        opened = sealed to plain
+        if (opened.size > 16) opened.clear()
+        opened[sealed] = plain
         return plain
     }
 

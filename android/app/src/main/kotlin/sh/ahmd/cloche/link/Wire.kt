@@ -61,13 +61,13 @@ data class Source(
 data class SignedDelivery(val manifest: String, val sig: String)
 
 @Serializable
-data class Inbox(val head: Long, val deliveries: List<SignedDelivery> = emptyList())
+data class Inbox(val head: Long, val name: String = "", val deliveries: List<SignedDelivery> = emptyList())
 
 @Serializable
 data class PairRequest(val code: String, val device: String)
 
 @Serializable
-data class PairResponse(val host: String, val addr: String = "", val key: String, val secret: String, val head: Long)
+data class PairResponse(val host: String, val name: String = "", val addr: String = "", val key: String, val secret: String, val head: Long)
 
 @Serializable
 data class Result(

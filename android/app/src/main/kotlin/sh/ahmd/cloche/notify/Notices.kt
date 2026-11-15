@@ -13,10 +13,9 @@ import android.os.VibrationEffect
 import sh.ahmd.cloche.Cloche
 import sh.ahmd.cloche.MainActivity
 import sh.ahmd.cloche.R
-import sh.ahmd.cloche.link.Link
 import sh.ahmd.cloche.link.LinkService
+import sh.ahmd.cloche.link.Links
 import sh.ahmd.cloche.store.Delivery
-import sh.ahmd.cloche.store.Paired
 import sh.ahmd.cloche.store.Stage
 
 class Notices(private val app: Cloche) {
@@ -60,15 +59,17 @@ class Notices(private val app: Cloche) {
 
     private fun ready(d: Delivery) {
         val apk = d.apk ?: return
-        val build = "${mb(d.m.file.size)} · from ${d.m.host}"
+        val s = app.store.value
+        val review = s.reviews(d)
+        val build = "${mb(d.m.file.size)} · from ${s.named(d)}"
         val b = base(BUILDS, d)
             .setContentTitle(if (d.fresh) "New app: ${apk.label}" else "${apk.label} ${apk.versionName}".trim())
-            .setContentText(d.m.note.ifEmpty { if (d.fresh) "Review it before installing" else build })
+            .setContentText(d.m.note.ifEmpty { if (review) "Review it before installing" else build })
             .setStyle(Notification.BigTextStyle().bigText(listOf(d.m.note, build).filter { it.isNotEmpty() }.joinToString("\n")))
-            .setSubText(d.m.source?.described ?: d.m.host)
+            .setSubText(subText(d))
             .setPublicVersion(Notification.Builder(app, BUILDS).setSmallIcon(R.drawable.ic_cloche).setContentTitle("A build is ready").build())
             .setVisibility(Notification.VISIBILITY_PRIVATE)
-        if (d.fresh) {
+        if (review) {
             b.addAction(Notification.Action.Builder(null, "Review", open(d.id, install = false)).build())
         } else {
             b.addAction(Notification.Action.Builder(null, "Install", open(d.id, install = true)).build())
@@ -82,7 +83,7 @@ class Notices(private val app: Cloche) {
         val b = base(BUILDS, d)
             .setContentTitle("${d.label} $version".trim())
             .setContentText("Waiting for Wi-Fi · ${mb(d.m.file.size)}")
-            .setSubText(d.m.source?.described ?: d.m.host)
+            .setSubText(subText(d))
             .setGroup(QUIET)
             .setGroupAlertBehavior(Notification.GROUP_ALERT_SUMMARY)
             .addAction(Notification.Action.Builder(null, "Download now", open(d.id, install = false, download = true)).build())
@@ -131,6 +132,16 @@ class Notices(private val app: Cloche) {
         )
     }
 
+    private fun subText(d: Delivery): String {
+        val s = app.store.value
+        val source = d.m.source?.described
+        return when {
+            source == null -> s.named(d)
+            s.computers.size > 1 -> "$source · ${s.named(d)}"
+            else -> source
+        }
+    }
+
     fun rejected(host: String, count: Int) {
         nm.notify(
             REJECTED,
@@ -153,7 +164,7 @@ class Notices(private val app: Cloche) {
             Notification.Builder(app, PROBLEMS)
                 .setSmallIcon(R.drawable.ic_cloche)
                 .setContentTitle("$host unpaired this phone")
-                .setContentText("Open Cloche to pair again")
+                .setContentText(if (app.store.value.computers.isEmpty()) "Open Cloche to pair again" else "Its builds stop coming here. Pair again to get them.")
                 .setContentIntent(home())
                 .setAutoCancel(true)
                 .build(),
@@ -172,18 +183,11 @@ class Notices(private val app: Cloche) {
     }
 
     fun relink() {
-        if (LinkService.running) nm.notify(LINK_ID, link(app.link.value, app.store.value.paired))
+        if (LinkService.running) nm.notify(LINK_ID, link())
     }
 
-    fun link(link: Link, paired: Paired?): Notification {
-        val host = paired?.host ?: "your computer"
-        val title = when (link) {
-            is Link.Live -> "Linked to $host"
-            Link.Connecting -> "Connecting to $host"
-            Link.NoTailnet -> "Tailscale is off"
-            is Link.Down -> "Can't reach $host"
-            Link.Unpaired -> "Not paired"
-        }
+    fun link(): Notification {
+        val title = Links.title(app.store.value.computers, app.links.value)
         return Notification.Builder(app, LINK)
             .setSmallIcon(R.drawable.ic_cloche)
             .setContentTitle(title)

@@ -63,9 +63,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import sh.ahmd.cloche.link.Link
 import sh.ahmd.cloche.link.PairTicket
+import sh.ahmd.cloche.link.Tailnet
 import sh.ahmd.cloche.link.hex
+import sh.ahmd.cloche.store.Computer
 
 private const val CODE = 12
+
+const val TRUST = "Only pair with computers you trust. They can send builds to this phone, and each one installs only when you tap Install."
 
 fun cleanCode(s: String) = s.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(CODE)
 
@@ -78,15 +82,22 @@ fun PairScreen(
     error: String?,
     errors: Int,
     tailnetUp: Boolean,
-    replaces: String?,
+    computers: List<Computer>,
     padding: PaddingValues,
-    onPair: (PairTicket) -> Unit,
+    onPair: (PairTicket, String, String?) -> Unit,
     onBack: (() -> Unit)?,
 ) {
     val ink = ink
     val haptics = haptics()
     var mac by rememberSaveable(ticket) { mutableStateOf(ticket?.addr ?: "") }
     var code by rememberSaveable(ticket) { mutableStateOf(ticket?.code?.let(::cleanCode) ?: "") }
+    val same = ticket?.let { t -> computers.firstOrNull { t.matches(it) } }
+    val machine = ticket?.host ?: mac.substringBefore(':').substringBefore('.').trim()
+    val clash = if (same != null || machine.isBlank()) null else computers.firstOrNull { it.host.equals(machine, ignoreCase = true) }
+    var name by rememberSaveable(ticket) { mutableStateOf(same?.name ?: ticket?.name.orEmpty()) }
+    var replace by rememberSaveable(ticket, clash?.id) {
+        mutableStateOf(clash != null && Tailnet.hostOf(clash.addr) == Tailnet.hostOf(ticket?.addr ?: mac))
+    }
     LaunchedEffect(ticket) {
         val typed = ticket?.code?.let(::cleanCode) ?: return@LaunchedEffect
         code = ""
@@ -102,7 +113,7 @@ fun PairScreen(
     fun submit() {
         if (!ready) return
         val t = ticket?.takeIf { mac == it.addr && code == cleanCode(it.code) } ?: PairTicket.typed(mac, code.chunked(4).joinToString("-"))
-        onPair(t)
+        onPair(t, name, clash?.id?.takeIf { replace })
     }
     val link = remember(paired != null, busy) {
         when {
@@ -127,8 +138,18 @@ fun PairScreen(
             Notice("Unpaired", unpaired, ink.redline, plot = "unpaired", after = 200)
             Spacer(Modifier.height(18.dp))
         }
-        if (replaces != null && paired == null) {
-            Notice("Replaces $replaces", "This phone is paired with $replaces. Pairing with another computer ends that, and its builds stop coming here.", ink.redline, plot = "replaces", after = 200)
+        if (same != null && paired == null) {
+            Notice("Paired before", "This phone already has ${same.name} with this key. Pairing again refreshes it.", ink.line, plot = "again", after = 200)
+            Spacer(Modifier.height(18.dp))
+        }
+        if (clash != null && paired == null) {
+            Notice(
+                "Same name as ${clash.name}",
+                "${clash.host} is paired already, with key ${clash.fingerprint}. This may be that computer with a new key, or another one.",
+                ink.redline, plot = "clash", after = 200,
+            )
+            Spacer(Modifier.height(10.dp))
+            Choice(listOf(1 to "Replace it", 0 to "Keep both"), if (replace) 1 else 0) { replace = it == 1 }
             Spacer(Modifier.height(18.dp))
         }
 
@@ -136,7 +157,7 @@ fun PairScreen(
         Spacer(Modifier.height(12.dp))
         Reveal("step:1", 200) {
             Step("1", "On your computer, run") {
-                T("cloche pair", Type.small, ink.line, Modifier.background(ink.line.copy(alpha = 0.08f)).padding(horizontal = 8.dp, vertical = 4.dp))
+                T("cloche pair -android", Type.small, ink.line, Modifier.background(ink.line.copy(alpha = 0.08f)).padding(horizontal = 8.dp, vertical = 4.dp))
             }
         }
         Reveal("step:2", 260) {
@@ -150,7 +171,14 @@ fun PairScreen(
                     KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Next),
                 )
                 CodeField(code, { code = it }, accepted = paired != null, errors = errors, rise = haptics.rise, onDone = ::submit)
+                Field(
+                    "Name", name, { name = it.take(40) }, ticket?.name ?: "as the computer calls itself",
+                    KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
+                )
             }
+        }
+        if (ticket != null && ticket.display.isNotEmpty() && ticket.display != ticket.host) {
+            Spec("Machine", ticket.host, note = "its name on your tailnet")
         }
         ticket?.fingerprint?.let {
             Spec("Key", it.copyOf(8).hex().uppercase().chunked(4).joinToString(" "), note = "from the link")
@@ -164,6 +192,8 @@ fun PairScreen(
                     if (e != null) T(e, Type.small, ink.redline, Modifier.fillMaxWidth().padding(top = 6.dp)) else Box(Modifier.fillMaxWidth())
                 }
                 Spacer(Modifier.height(18.dp))
+                T(TRUST, Type.small, ink.dim)
+                Spacer(Modifier.height(14.dp))
                 PlotButton(
                     when {
                         paired != null -> "Paired"
