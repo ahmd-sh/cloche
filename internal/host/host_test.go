@@ -495,7 +495,7 @@ func TestPairLinkOpensThePairPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	frag, ok := strings.CutPrefix(p.URL, "https://ahmd-sh.github.io/cloche/pair/#")
+	frag, ok := strings.CutPrefix(p.URL, "https://ahmd.sh/cloche/pair/#")
 	if !ok {
 		t.Fatalf("pairing link %s", p.URL)
 	}

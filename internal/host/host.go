@@ -544,7 +544,7 @@ func (h *Host) startPairing(ttl time.Duration, ios bool, friend string) (PairSta
 	return p, nil
 }
 
-const PairPage = "https://ahmd-sh.github.io/cloche/pair/"
+const PairPage = "https://ahmd.sh/cloche/pair/"
 
 type PairStart struct {
 	Host        string    `json:"host"`

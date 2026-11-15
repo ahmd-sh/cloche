@@ -18,26 +18,27 @@
   <nav><a href="https://github.com/ahmd-sh/cloche">GitHub</a></nav>
 </header>
 <main>
-  <h1>App builds on your phone, from your computer, over Tailscale.</h1>
-  <p class="dim">An agent on your computer pushes a build. Your phone gets a notification, checks the build, and a tap installs it. iPhones get builds through a web app.</p>
+  <section class="hero">
+    <h1>App builds on your phone, from your computer, over Tailscale.</h1>
+    <p class="label">macOS and Linux</p>
+    <div class="cmd"><code>curl -fsSL https://ahmd.sh/cloche/install.sh | sh</code><button type="button">Copy</button></div>
+  </section>
 
   <h2>Install</h2>
-  <p class="dim">You need <a href="https://tailscale.com/download">Tailscale</a> on the computer and the phone, signed in to the same account.</p>
-  <p class="label">macOS and Linux</p>
-  <div class="cmd"><code>curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh</code><button type="button">Copy</button></div>
-  <p class="dim">The script downloads cloche from the latest <a href="https://github.com/ahmd-sh/cloche/releases/latest">release</a>, checks it against the release's checksums, puts it in your user folder, and runs <code>cloche setup</code>. Setup keeps <code>cloche serve</code> running in the background and adds a skill that tells Claude Code how to use cloche. If no phone is paired yet, it asks which kind you have and pairs it.</p>
+  <p class="dim">Install Cloche using the command above. You need <a href="https://tailscale.com/download">Tailscale</a> on the computer and the phone, signed in to the same account.</p>
   <p class="label">With Go</p>
   <div class="cmd"><code>go install github.com/ahmd-sh/cloche/cmd/cloche@latest &amp;&amp; cloche setup</code><button type="button">Copy</button></div>
 
   <h2>Pair</h2>
+  <p class="label">Android</p>
   <div class="cmd"><code>cloche pair -android</code><button type="button">Copy</button></div>
-  <p class="dim">Scan the code with your Android phone's camera. The page it opens helps you install Tailscale and Cloche, then pairs them.</p>
+  <p class="label">iOS</p>
   <div class="cmd"><code>cloche pair -ios</code><button type="button">Copy</button></div>
-  <p class="dim">For an iPhone. Builds for it need to be signed for that iPhone.</p>
+  <p class="label">Friend's phone on their own Tailscale</p>
   <div class="cmd"><code>cloche pair -android -friend sam</code><button type="button">Copy</button></div>
-  <p class="dim">For a friend's phone, on their own Tailscale. Send them the link it shows. A phone can pair with more than one computer.</p>
 
   <h2>Use</h2>
+  <p class="dim">Setup installs a skill for your agent (Claude Code, Codex, OpenCode, Pi). You may need to tell it to use Cloche to ship you builds.</p>
   <div class="cmd"><code>cloche push app-debug.apk -m "Rename inline"</code><button type="button">Copy</button></div>
   <div class="sheet"><pre class="flow">cloche push ──▶ cloche serve ◀── tailnet ── Cloche on the phone
   (agent)        (computer)                notifies; a tap installs</pre></div>

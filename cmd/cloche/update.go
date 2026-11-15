@@ -24,7 +24,7 @@ import (
 
 const (
 	noUpdateCheck = "CLOCHE_NO_UPDATE_CHECK"
-	installPage   = "https://ahmd-sh.github.io/cloche"
+	installPage   = "https://ahmd.sh/cloche"
 	maxBinary     = 200 << 20
 )
 

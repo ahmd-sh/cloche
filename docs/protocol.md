@@ -20,7 +20,7 @@ characters of Crockford base32, `XXXX-XXXX-XXXX`; five wrong tries close it)
 and shows a link:
 
 ```
-https://ahmd-sh.github.io/cloche/pair/#a=100.101.102.103%3A41778&c=K7Q2-M9XD-3FPA&f=<sha256 of the key, base64url>&h=my-laptop&n=Sam%27s+builds
+https://ahmd.sh/cloche/pair/#a=100.101.102.103%3A41778&c=K7Q2-M9XD-3FPA&f=<sha256 of the key, base64url>&h=my-laptop&n=Sam%27s+builds
 ```
 
 `n` is the name the computer offers (`cloche setup -name`), when it has one.

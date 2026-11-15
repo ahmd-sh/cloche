@@ -14,7 +14,7 @@ cloche push ──unix socket──▶ cloche serve ◀──tailnet (HTTP, long
 ## Install on macOS and Linux
 
 ```sh
-curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
+curl -fsSL https://ahmd.sh/cloche/install.sh | sh
 ```
 
 ## Use

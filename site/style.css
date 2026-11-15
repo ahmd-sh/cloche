@@ -45,6 +45,9 @@ p { margin: 0 0 12px; }
 .red { color: var(--red); }
 
 h1 { font-size: 26px; line-height: 1.25; font-weight: 600; margin: 8px 0 14px; }
+.hero { padding: clamp(48px, 14vh, 136px) 0 clamp(56px, 16vh, 152px); }
+.hero h1 { margin: 0 0 clamp(32px, 7vh, 64px); }
+.hero .cmd { margin: 0; }
 h2 {
   font-size: 11px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase;
   color: var(--live); margin: 36px 0 12px;
