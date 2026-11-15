@@ -57,7 +57,13 @@ function ago(iso) {
 
 const day = (iso) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
-const hostName = () => (me && me.host) || stored('host') || 'your computer';
+const hostName = () => stored('nickname') || (me && (me.display || me.host)) || stored('display') || stored('host') || 'your computer';
+
+function retitle() {
+  const name = stored('nickname') || (me && me.display) || 'Cloche';
+  $('meta[name="apple-mobile-web-app-title"]').setAttribute('content', name);
+  document.title = name;
+}
 
 function stored(k, v) {
   try {
@@ -91,11 +97,13 @@ async function load() {
   try {
     me = await api('/api/me');
     stored('host', me.host);
+    stored('display', me.display || '');
   } catch (e) {
     offline(e);
     return;
   }
-  $('#host').textContent = me.paired ? `${me.name} · ${me.host}` : me.host;
+  $('#host').textContent = me.paired ? `${me.name} · ${hostName()}` : hostName();
+  retitle();
   if (me.paired && 'setAppBadge' in navigator) {
     const n = me.builds.filter((b) => b.status === 'new').length;
     (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
@@ -144,7 +152,7 @@ function pairPage() {
     history.replaceState(null, '', '/pair');
   }
   const code = linkCode;
-  const host = me.host;
+  const host = hostName();
   if (!me.pairing) {
     show(h('div', { class: 'sheet' },
       h('h1', {}, `This iPhone isn’t paired with ${host}`),
@@ -160,7 +168,9 @@ function pairPage() {
   const form = h('form', { onsubmit: (e) => { e.preventDefault(); pair(input.value, btn, err); } }, input, h('div', { class: 'row' }, btn), err);
   show(h('div', { class: 'sheet' },
     h('h1', {}, `Pair with ${host}`),
+    host !== me.host && h('p', { class: 'faint' }, `${me.host} on your tailnet`),
     h('p', { class: 'dim' }, `${host} sends builds of the apps it makes to this iPhone. You install each with a tap.`),
+    me.friend && h('p', { class: 'callout' }, 'Only pair with computers you trust. They can send builds to this iPhone, and each one installs only when you tap Install.'),
     form,
   ));
   if (code && !linkTried) {
@@ -186,7 +196,7 @@ async function pair(code, btn, err) {
 }
 
 function homePage() {
-  const host = me.host;
+  const host = hostName();
   const notifyOn = me.notify && 'Notification' in window && Notification.permission === 'granted';
   const steps = [];
   const sent = stored('profile-sent');
@@ -201,7 +211,7 @@ function homePage() {
         ]));
   if (!standalone) {
     steps.push(step(steps.length + 1, false, 'Add Cloche to your Home Screen', [
-      'In Safari, tap Share, then Add to Home Screen. Open Cloche from your Home Screen for the last step.',
+      `In Safari, tap Share, then Add to Home Screen${stored('nickname') || me.display ? `, and keep the name ${hostName()} to tell it from other computers’ builds` : ''}. Open it from your Home Screen for the last step.`,
     ]));
   }
   steps.push(step(steps.length + 1, standalone ? notifyOn : me.notify, 'Turn on notifications',
@@ -232,9 +242,32 @@ function homePage() {
           h('p', {}, 'No builds yet'),
           h('p', { class: 'dim' }, `Builds from ${host} show up here${me.notify ? ', with a notification' : ''}.`)),
     h('footer', {},
-      h('p', {}, `Paired with ${host} as ${me.name}`),
+      h('p', {}, `Paired with ${host}${host !== me.host ? ` (${me.host})` : ''} as ${me.name}`),
+      nickname(),
       h('button', { class: 'quiet', onclick: unpair }, 'Unpair this iPhone')),
   );
+}
+
+function nickname() {
+  const input = h('input', {
+    value: stored('nickname') || '', placeholder: me.display || me.host, maxlength: '40', autocapitalize: 'words',
+    'aria-label': 'Name for this computer',
+  });
+  const save = () => {
+    const v = input.value.trim();
+    if (v === (stored('nickname') || '')) return;
+    if (v && v !== (me.display || me.host)) stored('nickname', v);
+    else {
+      try { localStorage.removeItem('nickname'); } catch {}
+    }
+    toast(v ? `Calling it ${hostName()}` : `Calling it ${me.display || me.host}`);
+    $('#host').textContent = `${me.name} · ${hostName()}`;
+    retitle();
+    homePage();
+  };
+  input.addEventListener('change', save);
+  return h('form', { class: 'nickname', onsubmit: (e) => { e.preventDefault(); input.blur(); } },
+    h('label', {}, 'Name for this computer', input));
 }
 
 function step(n, done, title, body) {
@@ -261,7 +294,7 @@ function tag(status) {
 }
 
 async function unpair() {
-  if (!confirm(`Unpair this iPhone from ${me.host}? Builds stop coming until it pairs again.`)) return;
+  if (!confirm(`Unpair this iPhone from ${hostName()}? Builds stop coming until it pairs again.`)) return;
   try {
     await api('/api/unpair', { method: 'POST', body: '{}' });
     const reg = await navigator.serviceWorker?.getRegistration();
@@ -348,7 +381,7 @@ async function buildPage(id) {
     } else offline(e);
     return;
   }
-  const host = me.host;
+  const host = hostName();
   const status = h('div', { class: 'status' });
   const blocked = b.covers === false;
   const install = b.sideload
@@ -396,7 +429,7 @@ async function buildPage(id) {
 }
 
 function setStatus(el, s, b) {
-  const host = me.host;
+  const host = hostName();
   switch (s) {
     case 'asked':
       el.replaceChildren('iOS asks whether to install it. Tap Install there, then go to your Home Screen to watch it load.');
@@ -450,5 +483,6 @@ if ('serviceWorker' in navigator) {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && me) load();
 });
-$('#host').textContent = stored('host') || '';
+$('#host').textContent = stored('nickname') || stored('display') || stored('host') || '';
+retitle();
 load();

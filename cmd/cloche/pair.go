@@ -131,10 +131,14 @@ The link works once, until %s.
 		}
 		epoch = st.Epoch
 		if ph := newPhone(before, st); ph != nil {
+			about := ph.Device
+			if ph.Friend != "" && ph.Login != "" {
+				about += ", " + ph.Login
+			}
 			if ph.Friend != "" {
-				fmt.Printf("\npaired with %s's phone, %s (%s, %s)\n", ph.Friend, ph.Name, ph.Device, ph.Login)
+				fmt.Printf("\npaired with %s's phone, %s (%s)\n", ph.Friend, ph.Name, about)
 			} else {
-				fmt.Printf("\npaired with %s (%s)\n", ph.Name, ph.Device)
+				fmt.Printf("\npaired with %s (%s)\n", ph.Name, about)
 			}
 			return nil
 		}
@@ -161,10 +165,9 @@ func newPhone(before, now host.Status) *host.PhoneStatus {
 }
 
 func sharing(what string) string {
-	return fmt.Sprintf(`Their %s needs Tailscale, with this computer
-shared to them. First, in the admin console's access controls, let people
-you share with reach only cloche's ports. Otherwise they reach every port
-on this computer:
+	return fmt.Sprintf(`Their %s needs Tailscale, with this computer shared to them. First,
+in the admin console's access controls, let people you share with reach
+only cloche's ports. Otherwise they reach every port on this computer:
 
   {"src": ["autogroup:shared"], "dst": ["*"], "ip": ["tcp:%d", "tcp:%d"]}
 

@@ -145,6 +145,9 @@ dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
 
 footer { margin-top: 36px; text-align: center; font-size: 12px; color: var(--faint); }
 footer button { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+footer .nickname { max-width: 320px; margin: 14px auto; text-align: left; }
+footer .nickname label { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+footer .nickname input { margin-top: 6px; font-size: 16px; font-weight: 400; letter-spacing: normal; text-transform: none; text-align: left; }
 
 #toast {
   position: fixed; left: 50%; top: max(12px, env(safe-area-inset-top)); transform: translate(-50%, -160%);
