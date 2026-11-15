@@ -22,7 +22,8 @@ curl -fsSL https://ahmd-sh.github.io/cloche/install.sh | sh
 ```sh
 cloche push app/build/outputs/apk/debug/app-debug.apk -m "Sessions: rename inline"
 cloche push app-debug.apk -wait   # until it's installed (0), refused/failed/declined (3), or 30m (4)
-cloche status                     # the phone, and what became of recent builds
+cloche push app-debug.apk -to sam # to a friend's phones instead of yours
+cloche status                     # the phones, and what became of recent builds
 ```
 
 `cloche setup` will add a skill that tells Claude Code how to use cloche.
@@ -43,8 +44,10 @@ service on Linux, and adds the agent skill. `cloche uninstall` removes both.
 Then pair the phone:
 
 ```sh
-cloche pair     # scan the code with the phone's camera, or type it into Cloche
+cloche pair -android    # scan the code with the phone's camera, or type it into Cloche
 ```
+
+Without `-android` or `-ios`, `cloche pair` asks which.
 
 The code will open a page that helps install Tailscale and Cloche on the
 phone, then pairs them.
@@ -86,8 +89,7 @@ HTTPS on the computer's tailnet name, with a certificate from Tailscale.
 
 ```sh
 cloche pair -ios                 # an iPhone of yours: scan the code, or open the link in Safari
-cloche pair -friend sam          # a friend's iPhone, on their own Tailscale account
-cloche push App.ipa -m "note"    # or the .app from xcodebuild; -to sam for the friend's
+cloche push App.ipa -m "note"    # or the .app from xcodebuild
 ```
 
 After pairing, the web app:
@@ -116,24 +118,50 @@ Requirements:
   Apple Developer account. `cloche push` refuses builds iOS would refuse and
   says why. An unsigned build will go as a download, for SideStore or AltStore
   to sign with the iPhone owner's Apple ID.
-- **For a friend**: Tailscale on their iPhone, and this computer shared with
-  them (admin console, the computer's menu, Share). Sharing gives them this
-  computer alone, with every port on it open unless the access controls
-  limit them. Limit share recipients to cloche's port, and keep them out of
-  the allow-all rule:
-
-  ```json
-  "grants": [
-    {"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
-    {"src": ["autogroup:shared"], "dst": ["*"], "ip": ["tcp:41780"]}
-  ]
-  ```
-
-  Their iPhone will see only the builds pushed to it with `-to`.
-
 The web app's port is 41780. For the iOS Simulator, `cloche serve -dev`
 serves it at `https://localhost:41780` with a local CA. Trust the CA with
 `xcrun simctl keychain booted add-root-cert <home>/dev-ca.pem`.
+
+## Friends and more computers
+
+A phone can pair with more than one computer, and a computer with more
+than one phone of either kind.
+
+```sh
+cloche pair -android -friend sam   # a friend's Android phone, on their own Tailscale account
+cloche pair -ios -friend sam       # a friend's iPhone
+cloche push app.apk -to sam        # to Sam's phones; -to sam,alex for both
+cloche friends                     # friends' phones, and the last build each got
+cloche unpair sam                  # forget all of Sam's phones
+```
+
+`cloche push` sends to your own phones unless `-to` names friends or
+phones. A build goes to the phones that can install it: APKs to Android
+phones, iOS builds to iPhones. With `-wait`, the first install ends the
+wait.
+
+A friend needs Tailscale, with this computer shared to them (admin
+console, the computer's menu, Share). Sharing gives them this computer
+alone, with every port on it open unless the access controls limit them.
+Limit share recipients to cloche's ports, and keep them out of the
+allow-all rule:
+
+```json
+"grants": [
+  {"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+  {"src": ["autogroup:shared"], "dst": ["*"], "ip": ["tcp:41778", "tcp:41780"]}
+]
+```
+
+`cloche setup -name "Sam's builds"` sets the name phones will show for this
+computer. On Android, Settings lists each paired computer: a name given
+there replaces the one the computer offers, and Review first makes every
+build from that computer open for review before it installs. By default
+an update to an app Cloche installed before takes one tap from the
+notification, from any computer. Pairing with a computer that has the
+same name as one already paired will ask whether to replace it or keep
+both. An iPhone pairs with each computer's web app separately, and each
+keeps its own name for its computer.
 
 ## How it works
 
@@ -147,19 +175,21 @@ has the wire format.
 ## Security
 
 - **Who can reach the computer.** Every request is checked with `tailscale
-  whois`. Only a node of the computer's own Tailscale user can pair, and
-  only with the one-time code from `cloche pair`. A computer that is a
-  tagged node has no owner, and pairs only friends' iPhones. After pairing,
-  only the paired phone's node, with its secret, can poll or fetch. Both
-  servers answer only to the computer's own address and names, which blocks
-  DNS rebinding.
-- **Who the phone trusts.** Pairing pins the computer's signing key, and the
-  QR code carries its fingerprint. Every delivery's manifest is signed with
-  that key, and every file is checked against the manifest's hash. The phone
-  pairs only with tailnet addresses and connects only through Tailscale's
-  VPN. A link can't point it at the internet through an exit node, or at
-  another app on the phone. Pairing with a new computer will show which one
-  it will replace.
+  whois`. Only a node of the computer's own Tailscale user can pair with the
+  one-time code from `cloche pair`. A friend's phone pairs only with a code
+  from `cloche pair -friend`. A computer that is a tagged node has no
+  owner, and pairs only friends' phones. After pairing, only a paired
+  phone's node, with its secret, can poll or fetch, and each phone gets
+  only the builds meant for it. Both servers answer only to the computer's
+  own address and names, which blocks DNS rebinding.
+- **Who the phone trusts.** Pairing pins each computer's signing key, and
+  the QR code carries its fingerprint. Every delivery's manifest is signed
+  with the key of the computer that sent it, and every file is checked
+  against the manifest's hash. The phone pairs only with tailnet addresses
+  and connects only through Tailscale's VPN. A link can't point it at the
+  internet through an exit node, or at another app on the phone. Pairing
+  with a computer that has the same name as a paired one will ask before
+  replacing it. Every build will show which computer sent it.
 - **What installs.** The phone reads each APK itself and goes by what it reads. It refuses a build signed with a
   different key from the installed app, or from the key it pinned when it
   first installed that app, which it keeps after an uninstall. It refuses a
@@ -171,8 +201,8 @@ has the wire format.
   Tailscale identifies the node behind each request. A paired iPhone sees
   only its own builds. Requests that change anything must come from the web
   app's own origin, and no other page can frame it. A friend's iPhone pairs
-  only with a `-friend` code and gets only builds that name it. iPhones
-  don't receive file paths from the computer.
+  only with a `-friend` code and gets only builds that name it or its
+  friend. iPhones don't receive file paths from the computer.
 - **Where the controls are.** Pins, pairing and the tap live on the phone.
   An agent on the computer can push, but it can't trust a new signer or
   install anything. That holds when Cloche is signed with its own key: set
@@ -194,10 +224,13 @@ What it doesn't stop:
   debug builds is any app signed with `~/.android/debug.keystore`. Your tap
   is the check, and the build's sheet will show what the phone read from
   the APK.
+- A paired computer, a friend's included, can send any app, and an update
+  signed with the same key as the installed app. Pair only with computers
+  you trust, and turn on Review first for one you trust less.
 - A build's source (repo, branch, commit) is whatever the push says. `cloche
   push` reads it from git, and any program that can push can set it.
 - The CLI's socket gives full control to any program running as you: push,
-  pair, unpair, or send a build to a friend's iPhone with `-to`. The skill
+  pair, unpair, or send a build to a friend's phone with `-to`. The skill
   asks agents to send to a friend only when asked.
 - An iPhone is known by its Tailscale node alone. Any app on a paired iPhone
   can list and download that iPhone's builds.

@@ -30,10 +30,12 @@
   <div class="cmd"><code>go install github.com/ahmd-sh/cloche/cmd/cloche@latest &amp;&amp; cloche setup</code><button type="button">Copy</button></div>
 
   <h2>Pair</h2>
-  <div class="cmd"><code>cloche pair</code><button type="button">Copy</button></div>
+  <div class="cmd"><code>cloche pair -android</code><button type="button">Copy</button></div>
   <p class="dim">Scan the code with your Android phone's camera. The page it opens helps you install Tailscale and Cloche, then pairs them.</p>
   <div class="cmd"><code>cloche pair -ios</code><button type="button">Copy</button></div>
   <p class="dim">For an iPhone. Builds for it need to be signed for that iPhone.</p>
+  <div class="cmd"><code>cloche pair -android -friend sam</code><button type="button">Copy</button></div>
+  <p class="dim">For a friend's phone, on their own Tailscale. Send them the link it shows. A phone can pair with more than one computer.</p>
 
   <h2>Use</h2>
   <div class="cmd"><code>cloche push app-debug.apk -m "Rename inline"</code><button type="button">Copy</button></div>

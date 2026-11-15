@@ -1,12 +1,12 @@
 ---
 name: cloche
-description: Deliver an Android build (APK) to the user's phone, or an iOS build (.ipa or .app) to a paired iPhone, with cloche, which reaches it over Tailscale wherever it is. Use when told to use cloche, or asked to put, send or install a build on the phone (or a friend's iPhone) while no device is attached.
+description: Deliver an Android build (APK) to the user's phone, or an iOS build (.ipa or .app) to a paired iPhone, with cloche, which reaches it over Tailscale wherever it is. Use when told to use cloche, or asked to put, send or install a build on the phone (or a friend's phone) while no device is attached.
 ---
 
 # Delivering a build with cloche
 
-`cloche` runs on this computer and relays APKs to the user's paired phone over
-their tailnet. The phone downloads each build, checks it, and notifies; the
+`cloche` runs on this computer and relays APKs to the user's paired phones over
+their tailnet. Each phone downloads the build, checks it, and notifies; the
 user taps to install. Nothing installs without that tap.
 
 1. Build the APK the way the project does (for example
@@ -18,18 +18,23 @@ user taps to install. Nothing installs without that tap.
    cloche push app/build/outputs/apk/debug/app-debug.apk -m "Sessions: rename inline"
    ```
 
-3. Tell the user what push printed: the phone has it, the phone is offline
-   (it gets the build when it's back), or no phone is paired.
+3. Tell the user what push printed: each phone has it, or is offline (it
+   gets the build when it's back), or no phone is paired.
 
 Then carry on. Don't wait for the install unless the next step needs it.
 
 ## More
 
-- `cloche push … -wait` blocks until the build is installed (exit 0), or
-  refused, failed, declined or superseded (exit 3), or 30 minutes pass
-  (exit 4). Use it only when what you do next depends on the install.
-- `cloche status` shows the phone (connected, or when it was last seen) and
-  recent deliveries with what became of each.
+- `cloche push … -wait` blocks until the build is installed on a phone
+  (exit 0), or refused, failed, declined or superseded on every phone
+  (exit 3), or 30 minutes pass (exit 4). Use it only when what you do next
+  depends on the install.
+- `cloche status` shows the phones (connected, or when each was last seen)
+  and recent deliveries with what became of each.
+- A push goes to the user's own phones. `-to` sends it to friends or phones
+  by name instead (`-to sam`, `-to sam,alex`; `cloche friends` lists them).
+  Send to a friend only when the user asks for that friend by name: it
+  lands on someone else's phone.
 - If push says cloche isn't running, `cloche setup` starts it again.
 - If `cloche status` says an update is out, tell the user. Run
   `cloche update` only when they ask.
@@ -37,8 +42,9 @@ Then carry on. Don't wait for the install unless the next step needs it.
   app (or from the one Cloche first installed), or with a lower versionCode
   than the installed one. If a push comes back refused, tell the user why
   rather than pushing again.
-- Don't run `cloche pair`, `cloche unpair` or `cloche serve` unless the user
-  asks: pairing is theirs to do.
+- Don't run `cloche pair`, `cloche unpair`, `cloche setup` or `cloche serve`
+  unless the user asks: pairing is theirs to do. `cloche pair` needs
+  `-android` or `-ios`, and `-friend <name>` for a friend's phone.
 - When a device is attached (`adb devices` lists one) and the user hasn't
   asked for cloche, `adb install -r` is quicker.
 
@@ -59,10 +65,10 @@ signed for that iPhone, by a provisioning profile that lists its UDID
    That's a development build (the iPhone needs Developer Mode on). For an
    ad hoc one, archive and export with `method` `release-testing` in the
    export options.
-2. Push the `.app` (cloche packs it) or the `.ipa`. `-to` names the iPhone;
-   without it, the push goes to the user's one iPhone. A friend's iPhone
-   gets a build only when `-to` names it. Send to a friend only when the
-   user asks for that friend by name: it lands on someone else's phone.
+2. Push the `.app` (cloche packs it) or the `.ipa`. Without `-to`, the push
+   goes to the user's own iPhones. A friend's iPhone gets a build only when
+   `-to` names the friend or the iPhone. Send to a friend only when the user
+   asks for that friend by name: it lands on someone else's phone.
 
    ```sh
    cloche push build/dd/Build/Products/Debug-iphoneos/App.app -m "Inbox: swipe to archive" -to sam
@@ -76,7 +82,9 @@ signed for that iPhone, by a provisioning profile that lists its UDID
   do.
 - An unsigned build goes too, as a download the iPhone's owner installs with
   SideStore or AltStore, signed with their own Apple ID.
-- iOS doesn't report installs: `-wait` ends when the iPhone has downloaded
+- Push sends the build to each iPhone whose UDID the profile lists, and
+  says which it left out and why.
+- iOS doesn't report installs: `-wait` ends when an iPhone has downloaded
   the build (exit 0).
-- `cloche pair -ios` and `cloche pair -friend <name>` pair iPhones: like
-  `cloche pair`, only when the user asks.
+- `cloche pair -ios` and `cloche pair -ios -friend <name>` pair iPhones:
+  like `cloche pair -android`, only when the user asks.

@@ -22,7 +22,7 @@
   <ol class="steps" id="steps">
     <li>
       <h3>Tailscale</h3>
-      <p class="dim">Install it and sign in with the account your computer uses.</p>
+      <p class="dim" id="tailscale">Install it and sign in with the account your computer uses.</p>
       <a class="button ghost" href="https://play.google.com/store/apps/details?id=com.tailscale.ipn">Get Tailscale</a>
     </li>
     <li>
@@ -33,11 +33,12 @@
     <li>
       <h3>Pair</h3>
       <p class="dim">With Tailscale on, open Cloche with this computer's code.</p>
+      <p class="dim" id="trust" hidden>Only pair with computers you trust. They can send builds to this phone, and each one installs only when you tap Install.</p>
       <a class="button" id="open" aria-disabled="true">Open in Cloche</a>
       <p class="faint" id="code"></p>
     </li>
   </ol>
-  <p class="faint">If the code has run out, run <code>cloche pair</code> on your computer again and scan the new one.</p>
+  <p class="faint" id="again">If the code has run out, run <code>cloche pair -android</code> on your computer again and scan the new one.</p>
 </main>
 </body>
 </html>
