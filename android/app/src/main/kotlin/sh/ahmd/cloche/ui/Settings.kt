@@ -116,7 +116,7 @@ fun SettingsScreen(
                 Box(Modifier.fillMaxWidth().height(1.dp).background(ink.line.copy(alpha = 0.25f)))
                 Spacer(Modifier.height(8.dp))
             }
-            ComputerBlock(c, links[c.id], now, arm, onRename, onReview, onUnpair)
+            ComputerBlock(c, state.label(c), links[c.id], now, arm, onRename, onReview, onUnpair)
         }
         Spacer(Modifier.height(14.dp))
         PlotButton("Pair another computer", onPairAnother, Modifier.fillMaxWidth(), primary = false)
@@ -185,6 +185,7 @@ fun SettingsScreen(
 @Composable
 private fun ComputerBlock(
     c: Computer,
+    label: String,
     link: Link?,
     now: Long,
     arm: Arm,
@@ -222,7 +223,7 @@ private fun ComputerBlock(
     Spacer(Modifier.height(10.dp))
     val key = "unpair:${c.id}"
     PlotButton(
-        if (arm.armed == key) "Tap again" else "Unpair ${c.name}",
+        if (arm.armed == key) "Tap again" else "Unpair $label",
         { arm.tap(key) { onUnpair(c.id) } },
         Modifier.fillMaxWidth(), primary = false, danger = true, quiet = true,
         fuse = { arm.fuse(key) },

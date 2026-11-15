@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import sh.ahmd.cloche.BuildConfig
 import sh.ahmd.cloche.Cloche
 import sh.ahmd.cloche.store.Computer
+import sh.ahmd.cloche.store.cleanName
 import sh.ahmd.cloche.store.newComputerId
 import java.io.IOException
 import java.net.URLDecoder
@@ -38,7 +39,7 @@ data class PairTicket(
             val f = q["f"]?.let { runCatching { Base64.getUrlDecoder().decode(it) }.getOrNull() }
             return PairTicket(
                 host = q["h"]?.ifBlank { null } ?: addr.substringBeforeLast(':'), addr = addr, code = code, fingerprint = f,
-                display = q["n"].orEmpty().filter { !it.isISOControl() }.trim().take(40), friend = q["friend"] == "1",
+                display = cleanName(q["n"].orEmpty()), friend = q["friend"] == "1",
             )
         }
 
@@ -72,8 +73,8 @@ object Pairing {
         }
         val sealed = app.secrets.seal(res.secret)
         val host = res.host.ifEmpty { t.host }
-        val offered = res.name.filter { !it.isISOControl() }.trim().take(40)
-        val wanted = name.trim().take(40)
+        val offered = cleanName(res.name)
+        val wanted = cleanName(name)
         val nickname = if (wanted.isEmpty() || wanted == offered.ifEmpty { host }) "" else wanted
         val now = System.currentTimeMillis()
         val c = Computer(

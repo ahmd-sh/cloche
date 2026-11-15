@@ -68,13 +68,14 @@ class Cloche : Application() {
 
     fun forget(id: String, why: String? = null) {
         val c = store.value.computer(id) ?: return
+        val name = store.value.label(c)
         store.update { s ->
             val rest = s.computers.filter { it.id != id }
             s.orphan(id).copy(computers = rest, unpaired = if (rest.isEmpty()) why ?: s.unpaired else null)
         }
         links.update { it - id }
         pipeline.forgotten(id)
-        if (why != null) notices.unpaired(c.name)
+        if (why != null) notices.unpaired(name)
         if (store.value.computers.isEmpty()) Watchdog.cancel(this)
     }
 

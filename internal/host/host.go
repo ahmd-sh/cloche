@@ -177,7 +177,18 @@ func (r *record) forPhone(p *phone) bool {
 	if len(r.For) == 0 && len(r.Phones) == 0 {
 		return p.Friend == ""
 	}
-	return p.Friend != "" && slices.Contains(r.For, p.Friend) || slices.Contains(r.Phones, p.Node)
+	return slices.Contains(r.Phones, p.Node)
+}
+
+func (r *record) group() string {
+	kind := "apk"
+	if r.ios() {
+		kind = "ipa"
+	}
+	if len(r.For) > 0 {
+		return kind + " for " + strings.Join(slices.Sorted(slices.Values(r.For)), ",")
+	}
+	return kind + " to " + strings.Join(slices.Sorted(slices.Values(r.Phones)), ",")
 }
 
 func (r *record) forIPhone(ip *iphone) bool {
@@ -268,8 +279,15 @@ func (h *Host) upgrade() {
 	for _, ip := range h.state.IPhones {
 		if ip.Friend && ip.FriendName == "" {
 			ip.FriendName = ip.Name
+			if i := strings.LastIndex(ip.Name, "-"); i > 0 && i < len(ip.Name)-1 && strings.Trim(ip.Name[i+1:], "0123456789") == "" && h.iphoneNamedFriend(ip.Name[:i]) {
+				ip.FriendName = ip.Name[:i]
+			}
 		}
 	}
+}
+
+func (h *Host) iphoneNamedFriend(name string) bool {
+	return slices.ContainsFunc(h.state.IPhones, func(ip *iphone) bool { return ip.Friend && ip.Name == name })
 }
 
 func (h *Host) Close() {
@@ -312,6 +330,11 @@ func (h *Host) Push(ctx context.Context, req PushRequest) (Summary, error) {
 	}
 	h.mu.Lock()
 	aud, err := h.audience(req.To, false)
+	for _, p := range h.state.Phones {
+		if p.Friend != "" && slices.Contains(aud.For, p.Friend) && !slices.Contains(aud.Phones, p.Node) {
+			aud.Phones = append(aud.Phones, p.Node)
+		}
+	}
 	h.mu.Unlock()
 	if err != nil {
 		return Summary{}, err
@@ -340,12 +363,16 @@ func (h *Host) pushAPK(ctx context.Context, req PushRequest, aud audience) (Summ
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	src := cleanSource(req.Source)
+	if src != nil && !h.ownOnly(aud) {
+		src.Dir = ""
+	}
 	m := wire.Manifest{
 		V: wire.Version, ID: id, Seq: h.state.Seq + 1, Host: h.name, PushedAt: h.now().UTC().Truncate(time.Second),
 		File:   wire.File{Name: clean(filepath.Base(req.Path), 255), Size: size, SHA256: sum},
 		APK:    info,
 		Note:   clean(req.Note, 500),
-		Source: cleanSource(req.Source),
+		Source: src,
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -411,23 +438,16 @@ func (h *Host) sign(b []byte) ([]byte, error) {
 }
 
 func (h *Host) prune() {
-	var phone, iphones int
+	count := map[string]int{}
 	for _, r := range h.records {
-		if r.ios() {
-			iphones++
-		} else {
-			phone++
-		}
+		count[r.group()]++
 	}
 	h.records = slices.DeleteFunc(h.records, func(r *record) bool {
-		n := &phone
-		if r.ios() {
-			n = &iphones
-		}
-		if *n <= Keep {
+		g := r.group()
+		if count[g] <= Keep {
 			return false
 		}
-		*n--
+		count[g]--
 		os.Remove(h.path("deliveries", r.m.ID+r.ext()))
 		os.Remove(h.path("deliveries", r.m.ID+".png"))
 		os.Remove(h.path("deliveries", r.m.ID+".json"))
@@ -692,15 +712,18 @@ func (h *Host) loadRecords() error {
 			h.log.Printf("skipping %s: %v", name, err)
 			continue
 		}
-		if r.Got == nil {
-			var old record03
-			json.Unmarshal(b, &old)
+		var old record03
+		json.Unmarshal(b, &old)
+		if r.Got == nil && (old.To != "" || old.progress != (progress{})) {
 			if node := h.owner03(r, old.To); node != "" && old.progress != (progress{}) {
 				g := old.progress
 				r.Got = map[string]*progress{node: &g}
 			}
 			if r.ios() && old.To != "" && len(r.Phones) == 0 {
 				r.Phones = []string{old.To}
+			}
+			if err := h.saveRecord(r); err != nil {
+				return err
 			}
 		}
 		h.records = append(h.records, r)

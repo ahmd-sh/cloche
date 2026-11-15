@@ -38,6 +38,7 @@ import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.Delivery
 import sh.ahmd.cloche.store.Saved
 import sh.ahmd.cloche.store.Stage
+import sh.ahmd.cloche.store.labels
 
 @Composable
 fun Home(
@@ -77,7 +78,7 @@ fun Home(
             Masthead("Sheet 01 · Builds", action = "Settings", onAction = onSettings)
             Spacer(Modifier.height(18.dp))
             val link = Links.overall(computers, links)
-            LinkPanel(link, Links.of(computers, links), now, state.deliveries.maxOfOrNull { it.received }) {
+            LinkPanel(link, Links.of(computers, links), labels(computers), now, state.deliveries.maxOfOrNull { it.received }) {
                 haptics.tick()
                 if (link == Link.NoTailnet) onFix("tailscale") else onRetry()
             }
@@ -102,7 +103,7 @@ fun Home(
                 )
                 Spacer(Modifier.height(14.dp))
                 if (computers.size > 1) {
-                    Filter(computers, filter) {
+                    Filter(computers, labels(computers), filter) {
                         haptics.tick()
                         only = it
                     }
@@ -110,7 +111,7 @@ fun Home(
                 }
             }
         }
-        if (all.isEmpty()) item(key = "empty") { Empty(computers.singleOrNull()?.name ?: computers.find { it.id == filter }?.name, Modifier.animateItem()) }
+        if (all.isEmpty()) item(key = "empty") { Empty((computers.singleOrNull() ?: computers.find { it.id == filter })?.let(state::label), Modifier.animateItem()) }
         items(listed, key = { it.id }) { d ->
             val i = all.indexOf(d)
             val after = if (d.id in here) 200 + 80 * i.coerceIn(0, 5) else TRAVEL - 120
@@ -143,7 +144,7 @@ fun Home(
                 TitleBlock(
                     listOf(
                         "Drawing" to "Cloche",
-                        "Host" to (one?.name ?: if (computers.isEmpty()) "—" else "${computers.size} computers"),
+                        "Host" to (one?.let(state::label) ?: if (computers.isEmpty()) "—" else "${computers.size} computers"),
                         "Key" to (one?.fingerprint?.take(9) ?: "—"),
                     ),
                     after = 420,
@@ -182,16 +183,16 @@ private fun retry(link: Link.Down, now: Long): String {
 }
 
 @Composable
-private fun LinkPanel(link: Link, each: List<Pair<Computer, Link>>, now: Long, pulse: Long?, onTap: () -> Unit) {
+private fun LinkPanel(link: Link, each: List<Pair<Computer, Link>>, names: Map<String, String>, now: Long, pulse: Long?, onTap: () -> Unit) {
     val ink = ink
     val one = each.singleOrNull()?.first
-    val label = one?.name ?: if (each.isEmpty()) null else "${each.size} computers"
+    val label = one?.let { names[it.id] } ?: if (each.isEmpty()) null else "${each.size} computers"
     val t = rememberPlot("panel")
     Column(Modifier.fillMaxWidth().press(onClick = onTap).drafted(ink.line.copy(alpha = 0.7f), drawn = { t.value }).padding(14.dp)) {
         LinkDiagram(link, label, Modifier.reveal { t.value }, pulse = pulse, after = 320)
         Spacer(Modifier.height(6.dp))
         if (each.size <= 1 || link == Link.NoTailnet) {
-            val (word, color, line) = linkWords(link, one?.name ?: "your computer", now)
+            val (word, color, line) = linkWords(link, label ?: "your computer", now)
             Row(Modifier.reveal { t.value }, verticalAlignment = Alignment.Top) {
                 Tag(word, color, filled = link is Link.Live)
                 Spacer(Modifier.width(10.dp))
@@ -199,12 +200,13 @@ private fun LinkPanel(link: Link, each: List<Pair<Computer, Link>>, now: Long, p
             }
         } else {
             for ((c, l) in each) {
-                val (word, color, line) = linkWords(l, c.name, now)
+                val name = names[c.id] ?: c.name
+                val (word, color, line) = linkWords(l, name, now)
                 Row(Modifier.reveal { t.value }.padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
                     Tag(word, color, filled = l is Link.Live)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        T(c.name, Type.small, ink.text, maxLines = 1)
+                        T(name, Type.small, ink.text, maxLines = 1)
                         if (l !is Link.Live) T(line, Type.small, ink.dim)
                     }
                 }
@@ -214,10 +216,10 @@ private fun LinkPanel(link: Link, each: List<Pair<Computer, Link>>, now: Long, p
 }
 
 @Composable
-private fun Filter(computers: List<Computer>, selected: String?, onSelect: (String?) -> Unit) {
+private fun Filter(computers: List<Computer>, names: Map<String, String>, selected: String?, onSelect: (String?) -> Unit) {
     val ink = ink
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-        val options = listOf<Pair<String?, String>>(null to "All") + computers.map { it.id to it.name }
+        val options = listOf<Pair<String?, String>>(null to "All") + computers.map { it.id to (names[it.id] ?: it.name) }
         for ((i, o) in options.withIndex()) {
             if (i > 0) Spacer(Modifier.width(8.dp))
             val on = o.first == selected

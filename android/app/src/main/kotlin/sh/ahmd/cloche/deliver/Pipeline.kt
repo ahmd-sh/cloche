@@ -25,6 +25,7 @@ import sh.ahmd.cloche.link.sha256
 import sh.ahmd.cloche.store.Delivery
 import sh.ahmd.cloche.store.Computer
 import sh.ahmd.cloche.store.Saved
+import sh.ahmd.cloche.store.cleanName
 import sh.ahmd.cloche.store.Stage
 import java.io.IOException
 
@@ -70,12 +71,12 @@ class Pipeline(private val app: Cloche) {
         val before = store.value.deliveries
         val after = store.update { s ->
             if (s.computer(c.id) == null) return@update s
-            val next = s.change(c.id) { it.copy(cursor = inbox.head, offered = inbox.name, seen = if (now - it.seen > SEEN) now else it.seen) }
+            val next = s.change(c.id) { it.copy(cursor = inbox.head, offered = cleanName(inbox.name), seen = if (now - it.seen > SEEN) now else it.seen) }
             next.copy(deliveries = trim(next, fresh.sortedByDescending { it.seq } + s.deliveries))
         }
         val kept = after.deliveries.mapTo(HashSet()) { it.id }
         before.filter { it.id !in kept }.forEach { drop(it.id) }
-        if (rejected > 0) app.notices.rejected(c.name, rejected)
+        if (rejected > 0) app.notices.rejected(store.value.label(c), rejected)
         return fresh.isNotEmpty()
     }
 

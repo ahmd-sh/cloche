@@ -294,7 +294,7 @@ func (h *Host) webPair(w http.ResponseWriter, r *http.Request) {
 	}
 	ip.Machine, ip.Login, ip.PairedAt = p.Name, p.Login, h.now().UTC()
 	ip.Friend, ip.FriendName = pr.friend != "", pr.friend
-	ip.Name = h.uniqueName(ip, firstNonEmpty(pr.friend, nameFrom(p.Name, "iphone")))
+	ip.Name = h.uniqueName(ip, phoneName(pr.friend, "iphone", p.Name))
 	h.pairing = nil
 	h.epoch++
 	h.seenAt[ip.Node] = h.now()

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -88,15 +89,16 @@ func (h *Host) pair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := newSecret()
-	ph := h.phone(p.Node)
-	if ph == nil {
-		ph = &phone{Node: p.Node}
+	ph := &phone{
+		Node: p.Node, Machine: p.Name, Login: p.Login, Friend: pr.friend,
+		Device: clean(req.Device, 64), Secret: hash(secret), PairedAt: h.now().UTC(),
+	}
+	if i := slices.IndexFunc(h.state.Phones, func(x *phone) bool { return x.Node == p.Node }); i >= 0 {
+		h.state.Phones[i] = ph
+	} else {
 		h.state.Phones = append(h.state.Phones, ph)
 	}
-	ph.Machine, ph.Login, ph.Friend = p.Name, p.Login, pr.friend
-	ph.Device, ph.Secret, ph.PairedAt = clean(req.Device, 64), hash(secret), h.now().UTC()
-	ph.App, ph.AppCode, ph.AppOffered = "", 0, ""
-	ph.Name = h.uniqueName(ph, firstNonEmpty(pr.friend, nameFrom(p.Name, "phone")))
+	ph.Name = h.uniqueName(ph, phoneName(pr.friend, "android", p.Name))
 	h.pairing = nil
 	h.epoch++
 	if err := h.saveState(); err != nil {
@@ -125,13 +127,17 @@ func (h *Host) authed(next http.HandlerFunc) http.HandlerFunc {
 		}
 		h.mu.Lock()
 		ph := h.phone(p.Node)
+		want := ""
+		if ph != nil {
+			want = ph.Secret
+		}
 		h.mu.Unlock()
 		token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		switch {
 		case ph == nil:
 			h.log.Printf("refused %s %s from %s (%s): not a paired phone", r.Method, r.URL.Path, p.Name, p.Node)
 			fail(w, http.StatusUnauthorized, "this phone isn't paired with this computer: pair again")
-		case subtle.ConstantTimeCompare([]byte(hash(token)), []byte(ph.Secret)) != 1:
+		case subtle.ConstantTimeCompare([]byte(hash(token)), []byte(want)) != 1:
 			h.log.Printf("refused %s %s from %s: wrong secret", r.Method, r.URL.Path, p.Name)
 			fail(w, http.StatusUnauthorized, "unknown secret: pair again")
 		default:

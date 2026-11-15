@@ -1,6 +1,7 @@
 package sh.ahmd.cloche.link
 
 import sh.ahmd.cloche.store.Computer
+import sh.ahmd.cloche.store.labels
 
 object Links {
     fun of(computers: List<Computer>, links: Map<String, Link>): List<Pair<Computer, Link>> =
@@ -19,16 +20,17 @@ object Links {
         val each = of(computers, links)
         if (each.isEmpty()) return "Not paired"
         if (each.any { it.second == Link.NoTailnet }) return "Tailscale is off"
+        val names = labels(computers)
         if (each.size == 1) {
             val (c, link) = each.single()
             return when (link) {
-                is Link.Live -> "Linked to ${c.name}"
-                is Link.Down -> "Can't reach ${c.name}"
-                else -> "Connecting to ${c.name}"
+                is Link.Live -> "Linked to ${names[c.id]}"
+                is Link.Down -> "Can't reach ${names[c.id]}"
+                else -> "Connecting to ${names[c.id]}"
             }
         }
         val live = each.count { it.second is Link.Live }
-        val down = each.filter { it.second is Link.Down }.map { it.first.name }
+        val down = each.filter { it.second is Link.Down }.map { names[it.first.id] }
         return when {
             live == each.size -> "Linked to ${each.size} computers"
             live > 0 && down.size == 1 -> "Linked to $live of ${each.size} · can't reach ${down.single()}"

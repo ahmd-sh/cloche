@@ -66,6 +66,7 @@ import sh.ahmd.cloche.link.PairTicket
 import sh.ahmd.cloche.link.Tailnet
 import sh.ahmd.cloche.link.hex
 import sh.ahmd.cloche.store.Computer
+import sh.ahmd.cloche.store.labels
 
 private const val CODE = 12
 
@@ -139,12 +140,12 @@ fun PairScreen(
             Spacer(Modifier.height(18.dp))
         }
         if (same != null && paired == null) {
-            Notice("Paired before", "This phone already has ${same.name} with this key. Pairing again refreshes it.", ink.line, plot = "again", after = 200)
+            Notice("Paired before", "This phone already has ${labels(computers)[same.id]} with this key. Pairing again refreshes it.", ink.line, plot = "again", after = 200)
             Spacer(Modifier.height(18.dp))
         }
         if (clash != null && paired == null) {
             Notice(
-                "Same name as ${clash.name}",
+                "Same name as ${labels(computers)[clash.id]}",
                 "${clash.host} is paired already, with key ${clash.fingerprint}. This may be that computer with a new key, or another one.",
                 ink.redline, plot = "clash", after = 200,
             )

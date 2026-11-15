@@ -24,6 +24,25 @@ func (h *Host) phone(node string) *phone {
 	return nil
 }
 
+func (h *Host) ownOnly(a audience) bool {
+	if len(a.For) > 0 {
+		return false
+	}
+	for _, node := range a.Phones {
+		if p := h.phone(node); p == nil || p.Friend != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func phoneName(friend, kind, machine string) string {
+	if friend != "" {
+		return friend + "-" + kind
+	}
+	return nameFrom(machine, kind)
+}
+
 func (h *Host) label() string {
 	if h.state.Display != "" {
 		return h.state.Display

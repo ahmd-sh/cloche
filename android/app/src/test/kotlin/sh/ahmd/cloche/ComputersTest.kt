@@ -3,6 +3,7 @@ package sh.ahmd.cloche
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -17,7 +18,9 @@ import sh.ahmd.cloche.store.Delivery
 import sh.ahmd.cloche.store.Saved
 import sh.ahmd.cloche.store.Stage
 import sh.ahmd.cloche.store.Store
+import sh.ahmd.cloche.store.cleanName
 import java.io.File
+import java.io.IOException
 
 class ComputersTest {
     @get:Rule
@@ -79,6 +82,26 @@ class ComputersTest {
 
         s = s.paired(computer("twin", "vishingstar", "K4"), head = 1, replace = null)
         assertEquals(3, s.computers.size)
+    }
+
+    @Test
+    fun anotherAddressCantClaimAPairedKey() {
+        val s = Saved(computers = listOf(computer("c1", "vishingstar", "K1")))
+        val e = assertThrows(IOException::class.java) { s.paired(computer("x", "sams-mac", "K1", addr = "100.64.0.9:41778"), 1, null) }
+        assertTrue(e.message!!, e.message!!.contains("vishingstar"))
+        assertEquals(1, s.paired(computer("y", "vishingstar", "K1"), 1, null).computers.size)
+    }
+
+    @Test
+    fun twoComputersWithOneNameAreToldApart() {
+        val a = computer("a", "vishingstar", "AAAA")
+        val b = computer("b", "sams-mac", "BBBB").copy(offered = "VISHINGSTAR")
+        val s = Saved(computers = listOf(a, b))
+        assertTrue(s.label(a).startsWith("vishingstar · "))
+        assertTrue(s.label(b).startsWith("VISHINGSTAR · "))
+        assertTrue(s.label(a) != s.label(b))
+        assertEquals("Work", Saved(computers = listOf(a, b.copy(nickname = "Work"))).label(b.copy(nickname = "Work")))
+        assertEquals("Sam's builds", cleanName("  Sam's\u202E builds\u0007 "))
     }
 
     @Test

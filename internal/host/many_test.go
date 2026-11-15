@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ahmd-sh/cloche/internal/tailnet"
 	"github.com/ahmd-sh/cloche/internal/wire"
 )
 
@@ -64,7 +65,7 @@ func TestManyPhones(t *testing.T) {
 	for _, p := range h.state.Phones {
 		names = append(names, p.Name+":"+p.Friend)
 	}
-	if strings.Join(names, " ") != "phone: laptop: sam:sam" {
+	if strings.Join(names, " ") != "phone: laptop: sam-android:sam" {
 		t.Errorf("names: %v", names)
 	}
 
@@ -79,7 +80,7 @@ func TestManyPhones(t *testing.T) {
 	if len(own.Phones) != 2 || own.Phones[0].Phone != "phone" || own.Phones[1].Phone != "laptop" {
 		t.Errorf("own push went to %+v", own.Phones)
 	}
-	if len(theirs.Phones) != 1 || theirs.Phones[0].Phone != "sam" || theirs.Phones[0].Friend != "sam" || theirs.For[0] != "sam" {
+	if len(theirs.Phones) != 1 || theirs.Phones[0].Phone != "sam-android" || theirs.Phones[0].Friend != "sam" || theirs.For[0] != "sam" {
 		t.Errorf("sam's push went to %+v", theirs.Phones)
 	}
 
@@ -201,7 +202,11 @@ func TestUpgradeFrom03(t *testing.T) {
 	state := `{
   "seq": 2,
   "phone": {"node": "nPhone", "name": "Pixel 10 Pro", "device": "Pixel", "secret_sha256": "` + hash("s3cret") + `", "paired_at": "2026-11-01T10:00:00Z", "app": "0.3.0", "app_code": 3000},
-  "iphones": [{"node": "nFriend", "name": "marwan", "machine": "iphone", "login": "m@icloud", "friend": true, "token": "t", "paired_at": "2026-11-01T10:00:00Z"}]
+  "iphones": [
+    {"node": "nFriend", "name": "marwan", "machine": "iphone", "login": "m@icloud", "friend": true, "token": "t", "paired_at": "2026-11-01T10:00:00Z"},
+    {"node": "nFriend2", "name": "marwan-2", "machine": "ipad", "login": "m@icloud", "friend": true, "token": "u", "paired_at": "2026-11-01T10:00:00Z"},
+    {"node": "nOwn", "name": "my-iphone-2", "machine": "iphone", "login": "me@github", "token": "v", "paired_at": "2026-11-01T10:00:00Z"}
+  ]
 }`
 	os.WriteFile(filepath.Join(dir, "state.json"), []byte(state), 0o600)
 	h0 := newHost(t)
@@ -233,6 +238,18 @@ func TestUpgradeFrom03(t *testing.T) {
 	if ip := h.state.IPhones[0]; ip.FriendName != "marwan" {
 		t.Errorf("the 0.3 friend: %+v", ip)
 	}
+	if ip := h.state.IPhones[1]; ip.FriendName != "marwan" || ip.Name != "marwan-2" {
+		t.Errorf("the 0.3 friend's second iPhone: %+v", ip)
+	}
+	if ip := h.state.IPhones[2]; ip.FriendName != "" {
+		t.Errorf("my 0.3 iPhone: %+v", ip)
+	}
+	var rec map[string]json.RawMessage
+	rb, _ := os.ReadFile(filepath.Join(dir, "deliveries", a.ID+".json"))
+	json.Unmarshal(rb, &rec)
+	if _, ok := rec["got"]; !ok || rec["taken"] != nil {
+		t.Errorf("the migrated record wasn't saved: %s", rb)
+	}
 	if got := inbox(t, h, phoneIP, "s3cret"); len(got) != 1 || got[0] != a.ID {
 		t.Errorf("the 0.3 phone's inbox: %v", got)
 	}
@@ -250,5 +267,84 @@ func TestUpgradeFrom03(t *testing.T) {
 	saved, _ := os.ReadFile(filepath.Join(dir, "state.json"))
 	if strings.Contains(string(saved), `"phone":`) || !strings.Contains(string(saved), `"phones":`) || !strings.Contains(string(saved), `"friend": true`) {
 		t.Errorf("saved: %s", saved)
+	}
+}
+
+func TestAFriendsBuildsStayTheirs(t *testing.T) {
+	h := newHost(t)
+	h.peers.(peers)["100.64.0.5"] = tailnet.Peer{Node: "nOtherSam", Name: "pixel", Login: "other@github"}
+	pairFrom(t, h, strangerIP, "sam")
+	ctx := context.Background()
+	src := &wire.Source{Dir: "/Users/me/dev/app", Repo: "app", Commit: "abc"}
+	theirs, err := h.Push(ctx, PushRequest{Path: fakeAPK(t, "theirs"), Source: src, To: []string{"sam"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := h.find(theirs.ID).m; m.Source.Dir != "" || m.Source.Repo != "app" {
+		t.Errorf("a friend's build carries %+v", m.Source)
+	}
+	mine := pairPhone(t, h)
+	own, _ := h.Push(ctx, PushRequest{Path: fakeAPK(t, "own"), Source: src})
+	if h.find(own.ID).m.Source.Dir != "/Users/me/dev/app" {
+		t.Error("my own build lost its folder")
+	}
+
+	h.Unpair("sam")
+	next := pairFrom(t, h, "100.64.0.5", "sam")
+	if got := inbox(t, h, "100.64.0.5", next.Secret); len(got) != 0 {
+		t.Errorf("a new sam got the old sam's builds: %v", got)
+	}
+	if w := call(t, h.PhoneAPI(), "100.64.0.5", "GET", "/v1/apk/"+theirs.ID, next.Secret, nil); w.Code != 404 {
+		t.Errorf("a new sam fetched the old sam's build: %d", w.Code)
+	}
+	if got := inbox(t, h, phoneIP, mine.Secret); len(got) != 1 || got[0] != own.ID {
+		t.Errorf("my inbox: %v", got)
+	}
+}
+
+func TestPairingAgainEndsTheOldPoll(t *testing.T) {
+	h := newHost(t)
+	old := pairPhone(t, h)
+	got := make(chan int)
+	go func() { got <- call(t, h.PhoneAPI(), phoneIP, "GET", "/v1/inbox?after=0&wait=10", old.Secret, nil).Code }()
+	time.Sleep(50 * time.Millisecond)
+	pairFrom(t, h, phoneIP, "sam")
+	select {
+	case code := <-got:
+		if code != 401 {
+			t.Errorf("the old poll ended with %d", code)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("pairing again didn't end the old poll")
+	}
+}
+
+func TestFriendsDontPushOutMyBuilds(t *testing.T) {
+	h := newHost(t)
+	pairFrom(t, h, strangerIP, "sam")
+	own, _ := h.Push(context.Background(), PushRequest{Path: fakeAPK(t, "own")})
+	for range Keep + 3 {
+		if _, err := h.Push(context.Background(), PushRequest{Path: fakeAPK(t, "x"), To: []string{"sam"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if h.find(own.ID) == nil {
+		t.Error("a friend's builds pushed out mine")
+	}
+	if len(h.records) != Keep+1 {
+		t.Errorf("kept %d", len(h.records))
+	}
+}
+
+func TestUnpairOnePhoneOfAFriend(t *testing.T) {
+	h := newHost(t)
+	h.peers.(peers)["100.64.0.5"] = tailnet.Peer{Node: "nSamTablet", Name: "tablet", Login: "them@github"}
+	pairFrom(t, h, strangerIP, "sam")
+	pairFrom(t, h, "100.64.0.5", "sam")
+	if n := h.state.Phones[1].Name; n != "sam-android-2" {
+		t.Errorf("sam's second phone is %q", n)
+	}
+	if gone, err := h.Unpair("sam-android"); err != nil || len(gone) != 1 || len(h.state.Phones) != 1 {
+		t.Errorf("unpair one of sam's: %v %v", gone, err)
 	}
 }

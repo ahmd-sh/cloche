@@ -192,7 +192,7 @@ func TestIPhonePairing(t *testing.T) {
 	if name := pairIPhone(t, h, iphoneIP, ""); name != "iphone-17-pro" {
 		t.Errorf("my iPhone is called %q", name)
 	}
-	if name := pairIPhone(t, h, friendIP, "sam"); name != "sam" {
+	if name := pairIPhone(t, h, friendIP, "sam"); name != "sam-iphone" {
 		t.Errorf("friend is called %q", name)
 	}
 	if len(h.state.IPhones) != 2 || !h.state.IPhones[1].Friend || h.state.IPhones[1].FriendName != "sam" || h.state.IPhones[0].Friend {
@@ -350,7 +350,7 @@ func TestIPhoneDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.Phones) != 1 || f.Phones[0].Phone != "sam" || len(f.Warnings) != 1 || !strings.Contains(f.Warnings[0], "UDID") {
+	if len(f.Phones) != 1 || f.Phones[0].Phone != "sam-iphone" || len(f.Warnings) != 1 || !strings.Contains(f.Warnings[0], "UDID") {
 		t.Errorf("friend's summary: %+v", f)
 	}
 	waitFor("the friend's notification", func() bool { return h.find(f.ID).of("nFriend").NotifyErr != "" })

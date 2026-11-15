@@ -135,6 +135,9 @@ cloche friends                     # friends' phones, and the last build each go
 cloche unpair sam                  # forget all of Sam's phones
 ```
 
+A friend's phones are named after them, like `sam-android` and
+`sam-iphone`. `-to` and `cloche unpair` take those names for one phone.
+
 `cloche push` sends to your own phones unless `-to` names friends or
 phones. A build goes to the phones that can install it: APKs to Android
 phones, iOS builds to iPhones. With `-wait`, the first install ends the

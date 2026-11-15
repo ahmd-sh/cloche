@@ -55,6 +55,13 @@ data class Computer(
 
 fun newComputerId(): String = UUID.randomUUID().toString().replace("-", "").take(12)
 
+fun cleanName(s: String) = s.filter { !it.isISOControl() && Character.getType(it) != Character.FORMAT.toInt() }.trim().take(40)
+
+fun labels(computers: List<Computer>): Map<String, String> = computers.associate { c ->
+    val twin = computers.any { it.id != c.id && it.name.equals(c.name, ignoreCase = true) }
+    c.id to if (twin) "${c.name} · ${c.fingerprint.take(4)}" else c.name
+}
+
 @Serializable
 enum class Stage(val wire: String?) {
     Fetching(null),
@@ -138,12 +145,17 @@ data class Saved(
 
     fun reviews(d: Delivery) = d.fresh || from(d)?.review == true
 
-    fun named(d: Delivery) = from(d)?.name ?: d.m.host
+    fun label(c: Computer) = labels(computers)[c.id] ?: c.name
+
+    fun named(d: Delivery) = from(d)?.let(::label) ?: d.m.host
 
     fun change(id: String, f: (Computer) -> Computer) = copy(computers = computers.map { if (it.id == id) f(it) else it })
 
     fun paired(c: Computer, head: Long, replace: String?): Saved {
         val same = computers.firstOrNull { it.key == c.key }
+        if (same != null && Tailnet.hostOf(same.addr) != Tailnet.hostOf(c.addr)) {
+            throw IOException("This computer answered with the key of ${label(same)}, which is paired at ${same.addr}. If it moved, unpair it in Settings first.")
+        }
         val old = same ?: replace?.let(::computer)
         val next = if (old == null) {
             c
