@@ -306,7 +306,9 @@ func TestPairingAgainEndsTheOldPoll(t *testing.T) {
 	h := newHost(t)
 	old := pairPhone(t, h)
 	got := make(chan int)
-	go func() { got <- call(t, h.PhoneAPI(), phoneIP, "GET", "/v1/inbox?after=0&wait=10", old.Secret, nil).Code }()
+	go func() {
+		got <- call(t, h.PhoneAPI(), phoneIP, "GET", "/v1/inbox?after=0&wait=10", old.Secret, nil).Code
+	}()
 	time.Sleep(50 * time.Millisecond)
 	pairFrom(t, h, phoneIP, "sam")
 	select {
